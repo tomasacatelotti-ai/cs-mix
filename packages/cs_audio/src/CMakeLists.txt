@@ -25,6 +25,7 @@ target_compile_definitions(cs_audio PRIVATE
 
 if (MSVC)
   target_compile_options(cs_audio PRIVATE /O2 /utf-8)
+  target_compile_definitions(cs_audio PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 else()
   target_compile_options(cs_audio PRIVATE -O2 -fvisibility=hidden)
 endif()
