@@ -150,7 +150,7 @@ class Vdj {
 
   static String _norm(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
 
-  /// Writes "<name> (CS Mix).m3u" next to the library, with PC paths so it opens in Virtual DJ.
+  /// Writes "`name` (CS Mix).m3u" next to the library, with PC paths so it opens in Virtual DJ.
   static Future<File> export(Playlist p, LibraryStore lib, String libraryRoot, String pcRoot) async {
     final sb = StringBuffer('﻿');
     for (final t in lib.tracksOf(p)) {

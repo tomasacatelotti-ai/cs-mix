@@ -25,7 +25,7 @@ class _DjScreenState extends State<DjScreen> {
       SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     }
-    app.dj.enter();
+    WidgetsBinding.instance.addPostFrameCallback((_) => app.dj.enter());
   }
 
   @override

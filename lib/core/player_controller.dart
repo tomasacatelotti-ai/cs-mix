@@ -70,6 +70,11 @@ class PlayerController extends ChangeNotifier {
       list.insert(0, t);
       first = 0;
     }
+    CsAudio.play(0, false);
+    CsAudio.play(1, false);
+    _transitioning = false;
+    _pendingPass = null;
+    _incoming = null;
     queue = list;
     index = first;
     active = 0;
