@@ -122,6 +122,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         app.cueLabel() ?? 'Apagada',
                         () => _pickDevice(master: false),
                       ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          'Bluetooth solo para el parlante: Android usa un dispositivo Bluetooth a la vez. '
+                          'Los auriculares de pre-escucha conectalos por cable o USB-C.',
+                          style: CS.body(13, color: CS.humo),
+                        ),
+                      ),
                       if (app.outputError != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
@@ -305,7 +313,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final options = <(String, String)>[
       ('auto', master ? 'Automática (la que use el sistema)' : 'Automática (auriculares o parlante del celular)'),
       if (!master) ('off', 'Apagada'),
-      for (final d in app.outputs) (d.key, d.label),
+      // Android plays to one Bluetooth device at a time, so the cue can't be Bluetooth.
+      for (final d in app.outputs)
+        if (master || d.kind != 'bluetooth') (d.key, d.label),
     ];
     final picked = await showModalBottomSheet<String>(
       context: context,
@@ -316,6 +326,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
             child: SectionTitle(master ? 'Salida principal' : 'Pre-escucha'),
           ),
+          if (!master)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                'Android manda audio a un solo dispositivo Bluetooth a la vez. Con el parlante por Bluetooth, '
+                'los auriculares de pre-escucha van por cable o USB.',
+                style: CS.body(13, color: CS.humo),
+              ),
+            ),
           for (final o in options)
             ListTile(
               title: Text(o.$2, style: CS.body(16, color: o.$1 == current ? CS.rojo : CS.blanco)),

@@ -1,7 +1,7 @@
 name: cs_mix
 description: "CS Mix — reproductor y DJ de Catelotti Sport."
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.1.1+1
 
 environment:
   sdk: ^3.13.0

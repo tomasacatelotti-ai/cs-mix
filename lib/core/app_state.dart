@@ -140,6 +140,11 @@ class AppState extends ChangeNotifier {
     } else if (settings.cueDevice != 'off') {
       c = _find(settings.cueDevice);
     }
+    if (c != null && Platform.isAndroid && c.kind == 'bluetooth') {
+      c = null;
+      outputError = 'La pre-escucha no puede ir por Bluetooth: Android usa un solo dispositivo Bluetooth a la vez. '
+          'Conectá los auriculares por cable o USB.';
+    }
     if (c == null) {
       CsAudio.closeCue();
       cueActive = false;

@@ -104,7 +104,7 @@ class _DjScreenState extends State<DjScreen> {
         const SizedBox(width: 8),
         Flexible(
           child: cue == null
-              ? const Pill('Pre-escucha apagada', icon: Icons.headset_off)
+              ? const Pill('Pre-escucha: conectá auriculares por cable o USB', icon: Icons.headset_off, color: CS.ambar, background: CS.ambarFondo)
               : Pill('Pre-escucha: $cue', icon: Icons.headphones, color: CS.ambar, background: CS.ambarFondo),
         ),
       ]),
@@ -191,16 +191,39 @@ class _DjScreenState extends State<DjScreen> {
                 value: dj.pitch[d],
                 min: -0.08,
                 max: 0.08,
-                onChanged: t == null ? null : (v) => dj.setPitch(d, (v * 1000).roundToDouble() / 1000),
+                // Snaps to 0 near the center so it is easy to land on it.
+                onChanged: t == null
+                    ? null
+                    : (v) {
+                        final r = (v * 1000).roundToDouble() / 1000;
+                        dj.setPitch(d, r.abs() <= 0.004 ? 0 : r);
+                      },
               ),
             ),
           ),
-          GestureDetector(
-            onTap: () => dj.setPitch(d, 0),
-            child: SizedBox(
-              width: 56,
-              child: Text('${dj.pitch[d] >= 0 ? '+' : ''}${fmtNum(dj.pitch[d] * 100)} %',
-                  textAlign: TextAlign.right, style: CS.body(12)),
+          SizedBox(
+            width: 50,
+            child: Text('${dj.pitch[d] >= 0 ? '+' : ''}${fmtNum(dj.pitch[d] * 100)} %',
+                textAlign: TextAlign.right, style: CS.body(12)),
+          ),
+          const SizedBox(width: 6),
+          Tooltip(
+            message: 'Pitch a 0',
+            child: Material(
+              color: dj.pitch[d] == 0 ? Colors.transparent : CS.acero,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(color: dj.pitch[d] == 0 ? CS.linea : color),
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => dj.setPitch(d, 0),
+                child: SizedBox(
+                  width: 44,
+                  height: 32,
+                  child: Center(child: Text('0', style: CS.cond(18, color: dj.pitch[d] == 0 ? CS.humo : CS.blanco))),
+                ),
+              ),
             ),
           ),
         ]),
