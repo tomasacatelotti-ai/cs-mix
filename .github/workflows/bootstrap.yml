@@ -1,0 +1,25 @@
+name: bootstrap
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  scaffold:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Generate templates
+        run: |
+          flutter --version | tee flutter-version.txt
+          mkdir out && cd out
+          flutter create --org com.catelottisport --project-name cs_mix --platforms android,windows cs_mix
+          flutter create --template=plugin_ffi --org com.catelottisport --platforms android,windows cs_audio
+          rm -rf cs_mix/build cs_audio/build cs_mix/.dart_tool cs_audio/.dart_tool cs_audio/example/build cs_audio/example/.dart_tool
+          cp ../flutter-version.txt .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scaffold
+          path: out
+          include-hidden-files: true
