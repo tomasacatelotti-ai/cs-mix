@@ -1,0 +1,28 @@
+name: cs_mix
+description: "CS Mix — reproductor y DJ de Catelotti Sport."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  ffi: ^2.1.3
+  cs_audio:
+    path: packages/cs_audio
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: Saira
+      fonts:
+        - asset: assets/fonts/Saira.ttf
+        - asset: assets/fonts/Saira-Italic.ttf
+          style: italic

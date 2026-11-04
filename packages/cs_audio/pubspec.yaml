@@ -1,0 +1,21 @@
+name: cs_audio
+description: "Motor de audio de CS Mix (miniaudio) expuesto por FFI."
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.13.0
+  flutter: '>=3.3.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  ffi: ^2.1.3
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        ffiPlugin: true
+      windows:
+        ffiPlugin: true

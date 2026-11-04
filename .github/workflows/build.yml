@@ -1,0 +1,89 @@
+name: build
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: 3.47.9
+  APP_VERSION: 0.1.${{ github.run_number }}
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Analyze (errors fail the build)
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+  android:
+    needs: analyze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build apk --release --build-name=${{ env.APP_VERSION }} --build-number=${{ github.run_number }}
+      - run: mv build/app/outputs/flutter-apk/app-release.apk "CS-Mix-${{ env.APP_VERSION }}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: CS-Mix-*.apk
+
+  windows:
+    needs: analyze
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build windows --release --build-name=${{ env.APP_VERSION }} --build-number=${{ github.run_number }}
+      - name: Zip
+        shell: pwsh
+        run: |
+          $out = "CS Mix"
+          Copy-Item -Recurse build/windows/x64/runner/Release $out
+          Compress-Archive -Path $out -DestinationPath "CS-Mix-Windows-${{ env.APP_VERSION }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: CS-Mix-Windows-*.zip
+
+  release:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ env.APP_VERSION }}" dist/* \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "CS Mix ${{ env.APP_VERSION }}" \
+            --notes "APK para Android y ZIP para Windows (descomprimir y abrir CSMix.exe)."
