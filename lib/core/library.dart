@@ -26,6 +26,15 @@ class LibraryStore extends ChangeNotifier {
   final Map<String, Uint8List> _peaks = {};
   final List<String> _peakOrder = [];
 
+  /// Grows on every change, so screens can cache what they compute from the library.
+  int revision = 0;
+
+  @override
+  void notifyListeners() {
+    revision++;
+    super.notifyListeners();
+  }
+
   bool scanning = false;
   String? scanError;
   DateTime? lastScan;

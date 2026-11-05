@@ -79,7 +79,7 @@ class PlayerScreen extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
       children: [
-        Text(p.transitioning ? 'En transición' : (deck.loading ? 'Cargando…' : 'Sonando'), style: CS.body(13, color: CS.humo)),
+        Text(p.transitioning ? 'En transición' : (app.deckBusy(p.active) ? _loadingText(p.active) : 'Sonando'), style: CS.body(13, color: CS.humo)),
         Text(cur.title.toUpperCase(), style: CS.cond(28), maxLines: 2, overflow: TextOverflow.ellipsis),
         const SizedBox(height: 2),
         Row(children: [
@@ -181,7 +181,7 @@ class PlayerScreen extends StatelessWidget {
           ),
         const SizedBox(height: 12),
         PrimaryButton(
-          next == null ? 'Sin próximo tema' : (nd.loading ? 'Preparando el próximo…' : 'Pasar ahora con ${fxLabel(p.fx)}'),
+          next == null ? 'Sin próximo tema' : (p.nextLoading ? _loadingText(p.idle, next: true) : 'Pasar ahora con ${fxLabel(p.fx)}'),
           onTap: next == null || p.transitioning ? null : () => p.passNow(),
         ),
       ],
@@ -287,6 +287,12 @@ class PlayerScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+String _loadingText(int deck, {bool next = false}) {
+  final dl = app.deckDownload(deck);
+  if (dl != null) return '${next ? 'Bajando el próximo' : 'Bajando'} de la PC… ${(dl * 100).round()} %';
+  return next ? 'Preparando el próximo…' : 'Cargando…';
 }
 
 /// Used by other screens to start playback of a single track.

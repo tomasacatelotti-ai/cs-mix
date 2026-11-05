@@ -121,6 +121,19 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                           child: Text('Todavía no hay. Importá las de Virtual DJ o creá una nueva.', style: CS.body(15, color: CS.humo)),
                         ),
                       for (final p in lib.playlists) _playlistRow(p),
+                      if (lib.remotePlaylists.isNotEmpty) ...[
+                        const SizedBox(height: 26),
+                        SectionTitle('Playlists de la PC', size: 22, trailing: Text('${lib.remotePlaylists.length}', style: CS.body(14, color: CS.humo))),
+                        const SizedBox(height: 4),
+                        for (final p in lib.remotePlaylists) _remoteRow(p),
+                      ],
+                      if (app.settings.wishlist.isNotEmpty) ...[
+                        const SizedBox(height: 26),
+                        const SectionTitle('Para conseguir', size: 22),
+                        const SizedBox(height: 4),
+                        Text('Lo que buscaste y no estaba en la biblioteca.', style: CS.body(14, color: CS.humo)),
+                        for (final w in List.of(app.settings.wishlist)) _wishRow(w),
+                      ],
                       const SizedBox(height: 26),
                       SectionTitle('Playlists de Virtual DJ', size: 22, trailing: IconBox(icon: Icons.refresh, tooltip: 'Buscar de nuevo', onTap: _findVdj)),
                       const SizedBox(height: 4),
@@ -190,6 +203,64 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                   app.player.playList(tracks, name: p.name);
                   openScreen(context, const PlayerScreen());
                 },
+        ),
+      ]),
+    );
+  }
+
+  Widget _remoteRow(Playlist p) {
+    final tracks = app.library.tracksOf(p);
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: CS.acero))),
+      child: Row(children: [
+        Expanded(
+          child: InkWell(
+            onTap: () => openScreen(context, LibraryScreen(initialTracks: tracks, title: p.name)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(p.name, style: CS.body(16, weight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text('${tracks.length} temas · de ${app.net.pcName.isEmpty ? 'la PC' : app.net.pcName}', style: CS.body(13, color: CS.humo)),
+            ]),
+          ),
+        ),
+        SquareButton(
+          icon: Icons.play_arrow,
+          size: 46,
+          color: CS.rojo,
+          iconSize: 22,
+          tooltip: 'Reproducir',
+          onTap: tracks.isEmpty
+              ? null
+              : () {
+                  app.player.playList(tracks, name: p.name);
+                  openScreen(context, const PlayerScreen());
+                },
+        ),
+      ]),
+    );
+  }
+
+  Widget _wishRow(String w) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: CS.acero))),
+      child: Row(children: [
+        const Icon(Icons.bookmark_border, color: CS.ambar),
+        const SizedBox(width: 10),
+        Expanded(child: Text(w, style: CS.body(15))),
+        IconButton(
+          tooltip: 'Buscar de nuevo',
+          icon: const Icon(Icons.search, color: CS.blanco),
+          onPressed: () => openScreen(context, LibraryScreen(autofocus: false, initialQuery: w)),
+        ),
+        IconButton(
+          tooltip: 'Quitar',
+          icon: const Icon(Icons.close, color: CS.humo),
+          onPressed: () {
+            app.settings.wishlist.remove(w);
+            app.saveSettings();
+            setState(() {});
+          },
         ),
       ]),
     );

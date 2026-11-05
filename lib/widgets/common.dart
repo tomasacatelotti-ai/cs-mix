@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../core/models.dart';
+import '../main.dart';
 import '../theme.dart';
 
 /// Header with back button and the red-bar brand block.
@@ -514,3 +516,61 @@ void openScreen(BuildContext context, Widget screen) {
 
 /// Back to Inicio from anywhere.
 void goHome(BuildContext context) => Navigator.of(context).popUntil((r) => r.isFirst);
+
+/// Cover picture from inside the file, or a tile in the genre's color.
+class CoverArt extends StatelessWidget {
+  const CoverArt(this.track, {super.key, this.size = 48, this.radius = 6});
+
+  final Track? track;
+  final double size;
+  final double radius;
+
+  static const _tints = [
+    (Color(0xFF3A0D0F), Color(0xFFFF6B70)),
+    (Color(0xFF3A2A10), CS.ambar),
+    (Color(0xFF262626), Color(0xFFD0D0D0)),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final t = track;
+    final f = t == null ? null : app.library.coverOf(t);
+    if (t != null && f == null && t.remote && t.hasCover) app.net.fetchCover(t);
+    final tint = _tints[(t?.folder.hashCode ?? 0).abs() % _tints.length];
+    final px = (size * MediaQuery.of(context).devicePixelRatio).round();
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: f != null
+            ? Image.file(
+                f,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                cacheWidth: px,
+                gaplessPlayback: true,
+                errorBuilder: (_, _, _) => _placeholder(tint),
+              )
+            : _placeholder(tint),
+      ),
+    );
+  }
+
+  Widget _placeholder((Color, Color) tint) => Container(
+        decoration: BoxDecoration(color: tint.$1, border: Border(left: BorderSide(color: tint.$2, width: 3))),
+        alignment: Alignment.center,
+        child: Icon(Icons.music_note, color: tint.$2, size: size * 0.4),
+      );
+}
+
+/// "8A · Festivo" style details for a track.
+String trackDetails(Track t) {
+  final parts = <String>[
+    if (camelot(t.key).isNotEmpty) camelot(t.key),
+    if (t.mood.isNotEmpty) t.mood,
+  ];
+  return parts.join(' · ');
+}
+

@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   ffi: ^2.1.3
+  url_launcher: ^6.3.1
   cs_audio:
     path: packages/cs_audio
 

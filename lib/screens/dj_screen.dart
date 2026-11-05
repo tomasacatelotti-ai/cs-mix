@@ -144,7 +144,7 @@ class _DjScreenState extends State<DjScreen> {
                 Text(t?.title ?? 'Tocá para cargar un tema', style: CS.body(15, weight: FontWeight.w500, color: t == null ? CS.humo : CS.blanco),
                     maxLines: 1, overflow: TextOverflow.ellipsis),
                 Text(
-                  t == null ? '' : '${t.subtitle} · ${s.loading ? 'cargando…' : fmtTime(s.remaining, negative: true)}',
+                  t == null ? '' : '${t.subtitle} · ${app.deckDownload(d) != null ? 'bajando de la PC ${(app.deckDownload(d)! * 100).round()} %' : (app.deckBusy(d) ? 'cargando…' : fmtTime(s.remaining, negative: true))}',
                   style: CS.body(12, color: CS.humo),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

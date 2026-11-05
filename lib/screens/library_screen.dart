@@ -1,20 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/models.dart';
 import '../main.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'player_screen.dart';
+import 'recognize_screen.dart';
 
 enum _Sort { name, bpm, folder, recent }
 
 /// Library browser. With [pickLabel] it returns the tapped track instead.
 class LibraryScreen extends StatefulWidget {
-  const LibraryScreen({super.key, this.pickLabel, this.initialTracks, this.title});
+  const LibraryScreen({super.key, this.pickLabel, this.initialTracks, this.title, this.initialDir, this.autofocus = false, this.initialQuery});
 
   final String? pickLabel;
   final List<Track>? initialTracks;
   final String? title;
+
+  /// Folder (relative to the library root) to open at, e.g. a genre from Inicio.
+  final String? initialDir;
+  final bool autofocus;
+  final String? initialQuery;
 
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
@@ -26,6 +33,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   /// Folder being browsed, relative to the library root ('/' separated). '' = everything.
   String? _dir;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialQuery != null) _q.text = widget.initialQuery!;
+    if (widget.initialDir != null) {
+      // A genre from Inicio is the first folder below the shared root.
+      final root = _root;
+      _dir = root.isEmpty ? widget.initialDir : '$root/${widget.initialDir}';
+    }
+  }
 
   bool get _browsing => widget.initialTracks == null;
   List<Track> get _src => widget.initialTracks ?? app.library.tracks;
@@ -145,6 +163,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
                   child: TextField(
                     controller: _q,
+                    autofocus: widget.autofocus,
                     onChanged: (_) => setState(() {}),
                     style: CS.body(16),
                     decoration: InputDecoration(
@@ -175,7 +194,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     ),
                   ),
                 Expanded(
-                  child: items.isEmpty
+                  child: items.isEmpty && searching
+                      ? _notFound(_q.text.trim())
+                      : items.isEmpty
                       ? Center(
                           child: Padding(
                             padding: const EdgeInsets.all(24),
@@ -276,6 +297,44 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
+  /// Nothing in the library: look it up on YouTube Music or a store, or note it to get it later.
+  Widget _notFound(String q) {
+    Future<void> open(String url) async {
+      final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      if (!ok && mounted) toast(context, 'No se pudo abrir el enlace.');
+    }
+
+    final enc = Uri.encodeQueryComponent(q);
+    final noted = app.settings.wishlist.contains(q);
+    return ListView(padding: const EdgeInsets.all(20), children: [
+      Text('NO ESTÁ EN TU BIBLIOTECA', style: CS.cond(24)),
+      const SizedBox(height: 4),
+      Text('"$q" no aparece en ${_cur.isEmpty || _cur == _root ? 'tu música' : _name(_cur)}.', style: CS.body(15, color: CS.humo)),
+      const SizedBox(height: 16),
+      PrimaryButton('Abrir en YouTube Music', height: 52, size: 20, onTap: () => open('https://music.youtube.com/search?q=$enc')),
+      const SizedBox(height: 10),
+      Text('Conseguilo para la biblioteca', style: CS.body(13, color: CS.humo)),
+      const SizedBox(height: 6),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        SecondaryButton('Beatport', icon: Icons.shopping_bag_outlined, onTap: () => open('https://www.beatport.com/search?q=$enc')),
+        SecondaryButton('Bandcamp', icon: Icons.shopping_bag_outlined, onTap: () => open('https://bandcamp.com/search?q=$enc')),
+        SecondaryButton('Traxsource', icon: Icons.shopping_bag_outlined, onTap: () => open('https://www.traxsource.com/search?term=$enc')),
+      ]),
+      const SizedBox(height: 14),
+      SecondaryButton(noted ? 'Anotado en "Para conseguir"' : 'Anotar para conseguir', icon: noted ? Icons.check : Icons.bookmark_add_outlined,
+          onTap: noted
+              ? null
+              : () {
+                  app.settings.wishlist.add(q);
+                  app.saveSettings();
+                  setState(() {});
+                  toast(context, 'Anotado. Lo ves en Listas → Para conseguir.');
+                }),
+      const SizedBox(height: 14),
+      Text('Cuando el archivo llegue a la carpeta de la biblioteca, CS Mix lo encuentra solo.', style: CS.body(13, color: CS.humo)),
+    ]);
+  }
+
   Widget _tile(Track t) {
     return InkWell(
       onTap: () {
@@ -289,14 +348,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: CS.acero))),
         child: Row(children: [
+          CoverArt(t, size: 46),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(t.title, style: CS.body(15, weight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
-                Text(t.artist.isEmpty ? _name(t.dir) : '${t.artist} · ${_name(t.dir)}',
-                    style: CS.body(13, color: CS.humo), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(
+                  [
+                    if (t.artist.isNotEmpty) t.artist,
+                    _name(t.dir),
+                    if (trackDetails(t).isNotEmpty) trackDetails(t),
+                  ].join(' · '),
+                  style: CS.body(13, color: CS.humo),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ],
             ),
           ),
@@ -346,6 +415,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
               toast(context, 'Agregado a la cola.');
             }),
             item(Icons.playlist_add, 'Agregar a una playlist', () => addToPlaylist(context, [t])),
+            item(Icons.auto_fix_high, 'Reconocer o corregir el nombre', () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => RecognizeScreen(only: t)));
+            }),
             if (t.failed)
               item(Icons.refresh, 'Analizar de nuevo', () {
                 t.failed = false;

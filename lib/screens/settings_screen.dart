@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cs_audio/cs_audio.dart';
 import 'package:flutter/material.dart';
 
@@ -7,6 +9,8 @@ import '../main.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'folder_picker.dart';
+import 'network_screen.dart';
+import 'recognize_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -161,6 +165,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         }),
                       ]),
                       _head('Biblioteca'),
+                      _deviceRow('Biblioteca en red', Platform.isAndroid
+                          ? (app.net.online ? 'Conectada a ${app.net.pcName}' : 'Usar la música de la PC del gimnasio')
+                          : (app.server.running ? 'Compartiendo en el Wi-Fi · PIN ${s.sharePin}' : 'Compartir esta biblioteca con los celulares'),
+                          () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NetworkScreen()))),
+                      _deviceRow('Reconocer temas mal nombrados', 'Por el sonido, con AcoustID',
+                          () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RecognizeScreen()))),
                       _deviceRow('Carpeta de la música', s.libraryRoot, _pickFolder),
                       const SizedBox(height: 8),
                       _label('Ruta de la biblioteca en la PC (para exportar a Virtual DJ)'),
