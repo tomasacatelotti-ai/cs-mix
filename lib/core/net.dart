@@ -16,7 +16,7 @@ const remotePrefix = 'csnet:';
 
 String newPin() => (Random.secure().nextInt(9000) + 1000).toString();
 
-/// Track as the PC shares it: its path becomes "csnet:<relative path>".
+/// Track as the PC shares it: its path becomes `csnet:` plus the relative path.
 Map<String, Object?> remoteJson(Track t) {
   final j = t.toJson();
   j['p'] = '$remotePrefix${t.relPath}';
@@ -119,11 +119,11 @@ class LibraryServer extends ChangeNotifier {
     try {
       final path = req.uri.path;
       if (path == '/api/info') {
-        return _json(res, {'name': name, 'tracks': library.localTracks.length, 'version': 1});
+        return await _json(res, {'name': name, 'tracks': library.localTracks.length, 'version': 1});
       }
       if (req.headers.value('x-csmix-pin') != pin) {
         res.statusCode = HttpStatus.unauthorized;
-        return _json(res, {'error': 'pin'});
+        return await _json(res, {'error': 'pin'});
       }
       final ip = req.connectionInfo?.remoteAddress.address ?? '?';
       final c = clients.putIfAbsent(ip, () => ShareClient(ip, ip));
@@ -134,10 +134,10 @@ class LibraryServer extends ChangeNotifier {
 
       switch (path) {
         case '/api/ping':
-          return _json(res, {'ok': true});
+          return await _json(res, {'ok': true});
         case '/api/library':
           notifyListeners();
-          return _json(res, {
+          return await _json(res, {
             'name': name,
             'tracks': [for (final t in library.localTracks) remoteJson(t)],
             'playlists': [
@@ -158,7 +158,7 @@ class LibraryServer extends ChangeNotifier {
           final t = library.localByRel(rel);
           if (t == null) {
             res.statusCode = HttpStatus.notFound;
-            return _json(res, {'error': 'track'});
+            return await _json(res, {'error': 'track'});
           }
           final file = switch (path) {
             '/api/audio' => File(t.path),
@@ -167,7 +167,7 @@ class LibraryServer extends ChangeNotifier {
           };
           if (!await file.exists()) {
             res.statusCode = HttpStatus.notFound;
-            return _json(res, {'error': 'file'});
+            return await _json(res, {'error': 'file'});
           }
           res.headers.contentType = path == '/api/audio' ? ContentType.binary : ContentType.binary;
           res.contentLength = await file.length();
@@ -176,7 +176,7 @@ class LibraryServer extends ChangeNotifier {
           return;
         default:
           res.statusCode = HttpStatus.notFound;
-          return _json(res, {'error': 'route'});
+          return await _json(res, {'error': 'route'});
       }
     } catch (e) {
       try {
