@@ -106,16 +106,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
         final subs = _browsing ? _subfolders(inDir, cur) : const <String, int>{};
         final searching = words.isNotEmpty;
 
-        // Search covers every subfolder; browsing shows folders first, then the files right here.
+        // A folder shows every track inside it (subfolders included); subfolders narrow it down.
         final tracks = [
           for (final t in inDir)
-            if (searching ? _matches(t, words) : (!_browsing || t.dir == cur)) t,
+            if (_matches(t, words)) t,
         ];
         if (_browsing || _sort != _Sort.name || searching) _sortTracks(tracks);
-        final folderNames = subs.keys.where((f) => !searching || words.every((w) => f.toLowerCase().contains(w))).toList()
-          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-        final playable = searching ? tracks : inDir;
-        final items = <Object>[...folderNames, ...tracks];
+        final folderNames = subs.keys.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+        final playable = tracks;
+        final items = tracks;
         final atRoot = cur == _root;
 
         return PopScope(
@@ -132,7 +131,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       : (widget.title ?? (atRoot ? 'Temas' : _name(cur))),
                   subtitle: lib.scanning
                       ? 'Buscando temas…'
-                      : '${playable.length} temas${folderNames.isNotEmpty && !searching ? ' · ${folderNames.length} carpetas' : ''}'
+                      : '${playable.length} temas${folderNames.isNotEmpty ? ' · ${folderNames.length} carpetas para filtrar' : ''}'
                           '${lib.pendingAnalysis > 0 ? ' · analizando ${lib.pendingAnalysis}' : ''}',
                   onBack: () => atRoot ? Navigator.of(context).pop() : _up(),
                   trailing: [
@@ -152,6 +151,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ],
                 ),
                 if (_browsing && !atRoot) _breadcrumb(cur),
+                if (folderNames.isNotEmpty) _folderChips(folderNames, subs, cur),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
                   child: TextField(
@@ -203,8 +203,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           itemCount: items.length,
                           itemExtent: 64,
                           itemBuilder: (context, i) {
-                            final it = items[i];
-                            return it is String ? _folderTile(it, subs[it] ?? 0, cur) : _tile(it as Track);
+                            return _tile(items[i]);
                           },
                         ),
                 ),
@@ -253,27 +252,37 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  Widget _folderTile(String name, int count, String cur) {
-    return InkWell(
-      onTap: () => _open(cur.isEmpty ? name : '$cur/$name'),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: CS.acero))),
-        child: Row(children: [
-          const Icon(Icons.folder, color: CS.ambar, size: 28),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name, style: CS.body(15, weight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
-                Text('$count temas', style: CS.body(13, color: CS.humo)),
-              ],
+  /// Subfolders of the current folder as filter chips: tapping one narrows the list to it.
+  Widget _folderChips(List<String> names, Map<String, int> counts, String cur) {
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        children: [
+          for (final n in names)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Material(
+                color: CS.grafito,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99), side: const BorderSide(color: CS.linea)),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(99),
+                  onTap: () => _open(cur.isEmpty ? n : '$cur/$n'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.folder, color: CS.ambar, size: 16),
+                      const SizedBox(width: 6),
+                      Text(n, style: CS.body(14)),
+                      const SizedBox(width: 6),
+                      Text('${counts[n] ?? 0}', style: CS.body(12, color: CS.humo)),
+                    ]),
+                  ),
+                ),
+              ),
             ),
-          ),
-          const Icon(Icons.chevron_right, color: CS.humo),
-        ]),
+        ],
       ),
     );
   }

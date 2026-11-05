@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/app_state.dart';
+import '../core/models.dart';
 import '../core/platform.dart';
 import '../main.dart';
 import '../theme.dart';
@@ -96,6 +97,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ],
                             onTap: () => _go(const DjScreen()),
                           ),
+                          if (lib.playlists.isNotEmpty) ...[
+                            const SizedBox(height: 26),
+                            SectionTitle('Tus playlists', size: 22, trailing: TextButton(
+                              onPressed: () => _go(const PlaylistsScreen()),
+                              child: Text('Ver todas', style: CS.body(14, color: CS.humo)),
+                            )),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              height: 150,
+                              child: ListView.separated(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: lib.playlists.length,
+                                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                                itemBuilder: (context, i) => _playlistTile(lib.playlists[lib.playlists.length - 1 - i]),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 26),
                           const SectionTitle('Seguir escuchando', size: 22),
                           const SizedBox(height: 4),
@@ -182,6 +200,40 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           const SizedBox(height: 10),
           Wrap(spacing: 6, runSpacing: 6, children: pills),
         ],
+      ),
+    );
+  }
+
+  Widget _playlistTile(Playlist p) {
+    final tracks = app.library.tracksOf(p);
+    return SizedBox(
+      width: 150,
+      child: BarCard(
+        padding: const EdgeInsets.all(12),
+        onTap: () => _go(LibraryScreen(initialTracks: tracks, title: p.name)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(
+            child: Text(p.name.toUpperCase(), style: CS.cond(19), maxLines: 3, overflow: TextOverflow.ellipsis),
+          ),
+          Text('${tracks.length} temas${p.source != null ? ' · VDJ' : ''}', style: CS.body(12, color: CS.humo)),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerRight,
+            child: SquareButton(
+              icon: Icons.play_arrow,
+              size: 38,
+              iconSize: 20,
+              color: CS.rojo,
+              tooltip: 'Reproducir ${p.name}',
+              onTap: tracks.isEmpty
+                  ? null
+                  : () {
+                      app.player.playList(tracks, name: p.name);
+                      _go(const PlayerScreen());
+                    },
+            ),
+          ),
+        ]),
       ),
     );
   }
