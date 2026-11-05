@@ -12,7 +12,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.Settings
+import java.io.File
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -24,6 +26,8 @@ class MainActivity : FlutterActivity() {
     }
 
     private var deviceCallback: AudioDeviceCallback? = null
+    private var pickResult: MethodChannel.Result? = null
+    private val pickRequest = 4711
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,6 +66,7 @@ class MainActivity : FlutterActivity() {
                     requestStorage()
                     result.success(null)
                 }
+                "pickFolder" -> pickFolder(call.argument<String>("initial"), result)
                 "outputDevices" -> result.success(outputDevices())
                 "serviceUpdate" -> {
                     val title = call.argument<String>("title") ?: "CS Mix"
@@ -121,6 +126,63 @@ class MainActivity : FlutterActivity() {
                 1
             )
         }
+    }
+
+    /** Android's own folder chooser (the pop-up window). Replies with a path, null if cancelled, "?" if unusable. */
+    private fun pickFolder(initial: String?, result: MethodChannel.Result) {
+        pickResult?.success(null)
+        pickResult = result
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        if (Build.VERSION.SDK_INT >= 26 && initial != null) {
+            pathToDocId(initial)?.let {
+                i.putExtra(
+                    DocumentsContract.EXTRA_INITIAL_URI,
+                    DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", it)
+                )
+            }
+        }
+        try {
+            startActivityForResult(i, pickRequest)
+        } catch (e: Exception) {
+            pickResult = null
+            result.success("?")
+        }
+    }
+
+    @Deprecated("Flutter still routes results through onActivityResult")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode != pickRequest) {
+            super.onActivityResult(requestCode, resultCode, data)
+            return
+        }
+        val r = pickResult ?: return
+        pickResult = null
+        val uri = if (resultCode == RESULT_OK) data?.data else null
+        if (uri == null) {
+            r.success(null)
+            return
+        }
+        r.success(treeToPath(uri) ?: "?")
+    }
+
+    /** "/storage/emulated/0/Music" → "primary:Music"; "/storage/1A2B-3C4D/x" → "1A2B-3C4D:x". */
+    private fun pathToDocId(path: String): String? {
+        val ext = Environment.getExternalStorageDirectory().absolutePath
+        if (path == ext || path.startsWith("$ext/")) return "primary:" + path.removePrefix(ext).trimStart('/')
+        val m = Regex("^/storage/([^/]+)/?(.*)$").find(path) ?: return null
+        return m.groupValues[1] + ":" + m.groupValues[2]
+    }
+
+    /** Folder chosen in the system window → real path (CS Mix reads files with "all files" access). */
+    private fun treeToPath(uri: Uri): String? {
+        val id = try { DocumentsContract.getTreeDocumentId(uri) } catch (e: Exception) { return null }
+        val c = id.indexOf(':')
+        if (c < 0) return null
+        val vol = id.substring(0, c)
+        val rel = id.substring(c + 1).trim('/')
+        val base = if (vol.equals("primary", ignoreCase = true)) Environment.getExternalStorageDirectory().absolutePath else "/storage/$vol"
+        val p = if (rel.isEmpty()) base else "$base/$rel"
+        return if (File(p).isDirectory) p else null
     }
 
     /** SD cards and USB drives, as "/storage/XXXX-XXXX". */

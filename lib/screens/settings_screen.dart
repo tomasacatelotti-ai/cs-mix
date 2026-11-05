@@ -373,7 +373,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     if (!mounted) return;
-    final p = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => FolderPicker(initial: s.libraryRoot)));
+    String? p;
+    if (Platform.isAndroid) {
+      // The system window (the usual pop-up); CS Mix's own browser only if that one can't be used.
+      p = await Native.pickFolderSystem(s.libraryRoot);
+      if (p == null) return;
+      if (p == '?') {
+        if (!mounted) return;
+        toast(context, 'Esa carpeta no se puede usar desde ahí. Elegila en esta lista.');
+        p = null;
+      }
+    }
+    if (p == null) {
+      if (!mounted) return;
+      p = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => FolderPicker(initial: s.libraryRoot)));
+    }
     if (p == null) return;
     s.libraryRoot = p;
     app.saveSettings();

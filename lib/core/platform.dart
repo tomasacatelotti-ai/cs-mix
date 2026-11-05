@@ -113,6 +113,16 @@ class Native {
     return await _ch.invokeMethod<bool>('hasStorage') ?? false;
   }
 
+  /// Android's own folder chooser. Returns the path, null if cancelled, '?' if that folder can't be used.
+  static Future<String?> pickFolderSystem(String initial) async {
+    if (!Platform.isAndroid) return '?';
+    try {
+      return await _ch.invokeMethod<String>('pickFolder', {'initial': initial});
+    } catch (_) {
+      return '?';
+    }
+  }
+
   static Future<void> requestStorageAccess() async {
     if (!Platform.isAndroid) return;
     await _ch.invokeMethod('requestStorage');
