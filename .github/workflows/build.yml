@@ -80,8 +80,26 @@ jobs:
           name: windows
           path: CS-Mix-Windows-*.zip
 
+  windows7:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: MinGW (32 bits)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq g++-mingw-w64-i686-posix gcc-mingw-w64-i686-posix binutils-mingw-w64-i686 zip
+      - name: Build CS Mix Clásico
+        run: windows-classic/build.sh "${{ env.APP_VERSION }}"
+      - name: Zip
+        run: |
+          mkdir -p "pkg/CS Mix Clasico"
+          cp windows-classic/out/CSMixClasico.exe windows-classic/LEEME.txt "pkg/CS Mix Clasico/"
+          cd pkg && zip -r "../CS-Mix-Clasico-Win7-${{ env.APP_VERSION }}.zip" "CS Mix Clasico"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows7
+          path: CS-Mix-Clasico-Win7-*.zip
+
   release:
-    needs: [android, windows]
+    needs: [android, windows, windows7]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -96,4 +114,4 @@ jobs:
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "CS Mix ${{ env.APP_VERSION }}" \
-            --notes "APK para Android y ZIP para Windows (descomprimir y abrir CSMix.exe)."
+            --notes "APK para Android, ZIP para Windows 10/11 (abrir CSMix.exe) y ZIP Clásico para Windows 7 de 32 o 64 bits (abrir CSMixClasico.exe)."

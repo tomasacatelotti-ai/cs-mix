@@ -40,7 +40,9 @@
 #if defined(__ANDROID__)
 #include <dlfcn.h>
 #endif
+#ifndef CSA_NO_CHROMAPRINT
 #include "chromaprint/chromaprint.h"
+#endif
 #include "chromaprint/kissfft/kiss_fftr.h"
 
 namespace {
@@ -789,8 +791,14 @@ int32_t openDevice(Engine& e, ma_device& dev, bool& ok, int32_t index, int32_t a
   cfg.pUserData = &e;
   cfg.aaudio.usage = ma_aaudio_usage_media;
   cfg.aaudio.contentType = ma_aaudio_content_type_music;
+#ifdef CSA_SAFE_LATENCY
+  // Slow single-core PCs (CS Mix Clásico): a bigger buffer never drops out; no DJ cue to keep in sync.
+  cfg.periodSizeInMilliseconds = 40;
+  cfg.performanceProfile = ma_performance_profile_conservative;
+#else
   cfg.periodSizeInMilliseconds = 10;
   cfg.performanceProfile = ma_performance_profile_low_latency;
+#endif
   ma_device_id id;
   std::memset(&id, 0, sizeof(id));
   if (androidId > 0) {
@@ -1055,6 +1063,11 @@ void csa_test_tone(int32_t on) {
 
 int32_t csa_fingerprint(const char* path, char* out, int32_t len, int32_t* duration_sec) {
   if (!path || !out || len <= 0) return -1;
+#ifdef CSA_NO_CHROMAPRINT
+  (void)duration_sec;
+  out[0] = 0;
+  return -10;
+#else
   out[0] = 0;
   constexpr int sr = 11025;
   ma_decoder_config cfg = ma_decoder_config_init(ma_format_s16, 1, sr);
@@ -1094,6 +1107,7 @@ int32_t csa_fingerprint(const char* path, char* out, int32_t len, int32_t* durat
   }
   chromaprint_free(ctx);
   return result;
+#endif
 }
 
 void csa_render_offline(float* out, int32_t frames, float* cue_out) {

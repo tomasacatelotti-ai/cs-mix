@@ -1,0 +1,40 @@
+﻿CS MIX CLÁSICO  ·  para Windows 7 (32 o 64 bits)
+================================================
+
+Qué hace
+--------
+1. Comparte la carpeta de música de esta PC con los celulares que tienen CS Mix
+   (mismo Wi-Fi, con PIN). Los celulares la ven sola en Ajustes > Red.
+2. Pasa música en esta misma PC con crossfade y los efectos Fade, Reverse,
+   Brake y Corte, con cola, búsqueda, carpetas, playlists de Virtual DJ y ánimo.
+
+Cómo se instala
+---------------
+1. Descomprimí este ZIP en una carpeta fija (por ejemplo el Escritorio o C:\CS Mix).
+   No lo abras desde adentro del ZIP.
+2. Abrí CSMixClasico.exe.
+3. La primera vez elegí la carpeta de la música (si existe E:\BIBLIOTECA - EN USO
+   se elige sola).
+4. Cuando Windows pregunte por el Firewall, tildá "Redes domésticas o de trabajo"
+   y tocá "Permitir acceso". Si no apareció, tocá el botón "Permitir en el firewall".
+5. La red de la PC tiene que ser "Red doméstica" o "Red de trabajo", no "Red pública"
+   (Panel de control > Centro de redes y recursos compartidos).
+
+En el celular
+-------------
+CS Mix > Ajustes > Red > Buscar la PC, y poné el PIN que muestra esta ventana.
+Si no la encuentra, escribí la IP que aparece arriba a la derecha.
+
+Importante
+----------
+- La primera vez analiza todos los temas (BPM, tono, ánimo, volumen y forma de onda).
+  Con 22 GB en esta PC puede tardar varias horas: dejala prendida una noche.
+  Se puede usar y pasar música mientras tanto; el análisis va despacito para no molestar.
+  Si hace falta, "Pausar el análisis" lo detiene y después sigue donde quedó.
+- Mientras comparte o pasa música la PC no se suspende sola.
+- "Abrir al prender la PC" la deja compartiendo apenas arranca Windows.
+- Los nombres se corrigen solo dentro de CS Mix: ningún archivo se renombra ni se borra.
+- Los datos (análisis y ajustes) quedan en %APPDATA%\CS Mix Clasico.
+
+Atajos: doble clic = reproducir / pasar a ese tema · Espacio = pausa · Ctrl+F = buscar ·
+clic derecho = que suene después, agregar a la cola, etc.

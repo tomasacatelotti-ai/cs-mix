@@ -1,0 +1,26 @@
+#include <winuser.h>
+1 ICON "app_icon.ico"
+1 RT_MANIFEST "app.manifest"
+
+1 VERSIONINFO
+FILEVERSION 0,1,0,0
+PRODUCTVERSION 0,1,0,0
+FILEOS 0x40004
+FILETYPE 0x1
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040a04b0"
+    BEGIN
+      VALUE "CompanyName", "Catelotti Sport"
+      VALUE "FileDescription", "CS Mix Clasico"
+      VALUE "ProductName", "CS Mix Clasico"
+      VALUE "FileVersion", "0.1"
+      VALUE "OriginalFilename", "CSMixClasico.exe"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x040a, 1200
+  END
+END
