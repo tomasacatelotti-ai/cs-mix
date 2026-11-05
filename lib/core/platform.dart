@@ -98,12 +98,13 @@ class Native {
       return out;
     }
     if (Platform.isWindows) {
-      final out = <String>[];
-      for (var c = 'A'.codeUnitAt(0); c <= 'Z'.codeUnitAt(0); c++) {
-        final d = '${String.fromCharCode(c)}:\\';
-        if (Directory(d).existsSync()) out.add(d);
-      }
-      return out;
+      // In parallel and with a time limit: an empty card reader or DVD drive can stall for seconds.
+      final letters = [for (var c = 'C'.codeUnitAt(0); c <= 'Z'.codeUnitAt(0); c++) '${String.fromCharCode(c)}:\\'];
+      final ok = await Future.wait(letters.map((d) => Directory(d)
+          .exists()
+          .timeout(const Duration(milliseconds: 1500), onTimeout: () => false)
+          .catchError((Object _) => false)));
+      return [for (var i = 0; i < letters.length; i++) if (ok[i]) letters[i]];
     }
     return ['/'];
   }

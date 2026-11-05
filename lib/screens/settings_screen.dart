@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cs_audio/cs_audio.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../core/models.dart';
@@ -374,7 +375,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     if (!mounted) return;
     String? p;
-    if (Platform.isAndroid) {
+    if (Platform.isWindows) {
+      // The usual Windows "Seleccionar carpeta" window.
+      final start = await Directory(s.libraryRoot).exists() ? s.libraryRoot : null;
+      try {
+        p = await getDirectoryPath(initialDirectory: start, confirmButtonText: 'Usar esta carpeta');
+      } catch (_) {
+        p = null;
+      }
+      if (p == null) return;
+    } else if (Platform.isAndroid) {
       // The system window (the usual pop-up); CS Mix's own browser only if that one can't be used.
       p = await Native.pickFolderSystem(s.libraryRoot);
       if (p == null) return;
