@@ -20,9 +20,9 @@ class PlayerController extends ChangeNotifier {
 
   bool _pendingPlay = false;
   TransitionFx? _pendingPass;
-  int? _incoming; // queue index coming in through the running transition
+  Track? _incoming; // track coming in through the running (or pending) transition
   bool _transitioning = false;
-  String? _idlePath;
+  Track? _idleTrack; // what was requested on the idle deck
   double? oneTimeEntry;
 
   int get idle => 1 - active;
@@ -44,6 +44,10 @@ class PlayerController extends ChangeNotifier {
   bool get playing => _pendingPlay || app.engine.decks[active].playing;
   DeckSnapshot get currentDeck => app.engine.decks[active];
   DeckSnapshot get nextDeck => app.engine.decks[idle];
+  bool get nextLoading => app.deckBusy(idle);
+
+  /// Live check (not the last poll): the deck holds [t] and finished loading it.
+  bool _ready(int deck, Track? t) => t != null && app.deckHolds(deck, t) && CsAudio.info(deck).ready;
 
   void reset() {
     queue = [];
@@ -53,7 +57,7 @@ class PlayerController extends ChangeNotifier {
     _pendingPass = null;
     _incoming = null;
     _transitioning = false;
-    _idlePath = null;
+    _idleTrack = null;
     oneTimeEntry = null;
     source = null;
     notifyListeners();
@@ -70,6 +74,7 @@ class PlayerController extends ChangeNotifier {
       list.insert(0, t);
       first = 0;
     }
+    CsAudio.cancelTransition();
     CsAudio.play(0, false);
     CsAudio.play(1, false);
     _transitioning = false;
@@ -86,12 +91,26 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Where a new "next" goes: after the current track, or after the one fading in.
+  int get _insertAt {
+    if (_transitioning && _incoming != null) {
+      final i = queue.indexOf(_incoming!);
+      if (i >= 0) return i + 1;
+    }
+    return index + 1;
+  }
+
   void playNow(Track t) {
     if (app.mode != Mode.player || current == null) {
-      playList([t], name: null);
+      playList([t]);
       return;
     }
-    queue.insert(index + 1, t);
+    queue.insert(_insertAt, t);
+    if (_transitioning) {
+      // It plays right after the transition that is already running.
+      notifyListeners();
+      return;
+    }
     _preloadNext();
     passNow();
   }
@@ -111,13 +130,14 @@ class PlayerController extends ChangeNotifier {
       playList([t]);
       return;
     }
-    queue.insert(index + 1, t);
+    queue.insert(_insertAt, t);
     _preloadNext();
     notifyListeners();
   }
 
   void removeAt(int i) {
     if (i == index || i < 0 || i >= queue.length) return;
+    if (_transitioning && identical(queue[i], _incoming)) return;
     final wasNext = i == nextIndex;
     queue.removeAt(i);
     if (i < index) index--;
@@ -126,7 +146,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   void jumpTo(int i) {
-    if (i < 0 || i >= queue.length || i == index) return;
+    if (i < 0 || i >= queue.length || i == index || _transitioning) return;
     final t = queue.removeAt(i);
     if (i < index) index--;
     queue.insert(index + 1, t);
@@ -137,9 +157,10 @@ class PlayerController extends ChangeNotifier {
   void setShuffle(bool on) {
     app.settings.shuffle = on;
     app.saveSettings();
-    if (on && index + 1 < queue.length) {
-      final rest = queue.sublist(index + 1)..shuffle(Random());
-      queue = [...queue.sublist(0, index + 1), ...rest];
+    final from = _insertAt;
+    if (on && from < queue.length) {
+      final rest = queue.sublist(from)..shuffle(Random());
+      queue = [...queue.sublist(0, from), ...rest];
       _preloadNext();
     }
     notifyListeners();
@@ -148,7 +169,7 @@ class PlayerController extends ChangeNotifier {
   void setRepeat(bool on) {
     app.settings.repeat = on;
     app.saveSettings();
-    if (_idlePath == null) _preloadNext();
+    if (_idleTrack == null) _preloadNext();
     notifyListeners();
   }
 
@@ -158,20 +179,24 @@ class PlayerController extends ChangeNotifier {
   }
 
   void _load(int deck, Track t, double start) {
-    CsAudio.load(deck, t.path, start);
-    CsAudio.setGainDb(deck, app.gainFor(t));
-    app.library.prioritize(t);
+    app.loadDeck(deck, t, start);
   }
 
   void _preloadNext() {
+    // Never touch the idle deck while it is fading in: tick() preloads afterwards.
+    if (_transitioning) return;
     final n = next;
     oneTimeEntry = null;
     if (n == null) {
-      if (_idlePath != null) CsAudio.unload(idle);
-      _idlePath = null;
+      if (_idleTrack != null) {
+        CsAudio.unload(idle);
+        app.forgetDeck(idle);
+      }
+      _idleTrack = null;
       return;
     }
-    _idlePath = n.path;
+    if (identical(_idleTrack, n) && app.deckHolds(idle, n) && !app.deckError(idle)) return;
+    _idleTrack = n;
     _load(idle, n, app.entryFor(n));
   }
 
@@ -181,17 +206,17 @@ class PlayerController extends ChangeNotifier {
     return oneTimeEntry ?? app.entryFor(n);
   }
 
-  /// Moves the entry point of the next track; [save] stores it in the track.
-  void setNextEntry(double sec, {required bool save}) {
-    final n = next;
-    if (n == null) return;
+  /// Moves the entry point of [t] if it is still the next track; [save] stores it in the track.
+  void setNextEntry(Track t, double sec, {required bool save}) {
     if (save) {
-      n.entry = sec;
-      oneTimeEntry = null;
+      t.entry = sec;
       app.library.changed();
-    } else {
-      oneTimeEntry = sec;
     }
+    if (!identical(next, t)) {
+      notifyListeners();
+      return;
+    }
+    oneTimeEntry = save ? null : sec;
     CsAudio.seek(idle, sec);
     notifyListeners();
   }
@@ -222,9 +247,9 @@ class PlayerController extends ChangeNotifier {
     }
     // The idle deck takes the previous track and we cut to it.
     final prev = queue[index - 1];
+    _idleTrack = prev;
     _load(idle, prev, 0);
-    _idlePath = prev.path;
-    _incoming = index - 1;
+    _incoming = prev;
     _pendingPass = TransitionFx.cut;
     notifyListeners();
   }
@@ -232,9 +257,11 @@ class PlayerController extends ChangeNotifier {
   /// Manual transition to the next track with the selected effect.
   void passNow([TransitionFx? f]) {
     if (_transitioning || next == null) return;
+    final cur = current;
+    if (cur != null) app.noteSkip(cur, currentDeck.position);
     final use = f ?? fx;
-    _incoming = nextIndex;
-    if (!nextDeck.ready) {
+    _incoming = next;
+    if (!_ready(idle, _incoming)) {
       _pendingPass = use;
       notifyListeners();
       return;
@@ -243,6 +270,7 @@ class PlayerController extends ChangeNotifier {
   }
 
   void _start(TransitionFx f, double seconds) {
+    _pendingPass = null;
     _transitioning = true;
     CsAudio.transition(idle, f, seconds);
     notifyListeners();
@@ -252,61 +280,68 @@ class PlayerController extends ChangeNotifier {
     if (current == null) return;
     final e = app.engine;
     final cur = e.decks[active];
-    final nx = e.decks[idle];
 
-    if (_pendingPlay && (cur.ready || cur.error)) {
+    if (_pendingPlay && (cur.ready || app.deckError(active))) {
       _pendingPlay = false;
       if (cur.ready) CsAudio.play(active, true);
       notifyListeners();
     }
 
-    if (_transitioning && !e.transitioning) {
+    if (_transitioning && !e.transitioning && !CsAudio.transitionActive) {
       _transitioning = false;
       active = idle;
-      index = _incoming ?? (nextIndex ?? index);
+      final inc = _incoming;
+      final i = inc == null ? -1 : queue.indexOf(inc);
+      index = i >= 0 ? i : (nextIndex ?? index);
       _incoming = null;
-      _preloadNext();
+      _idleTrack = null;
+        _preloadNext();
       notifyListeners();
       return;
     }
+    if (_transitioning) return;
 
-    if (_pendingPass != null && !_transitioning && (nx.ready || nx.error)) {
-      final f = _pendingPass!;
-      _pendingPass = null;
-      if (nx.ready) {
+    final inc = _incoming;
+    if (_pendingPass != null && inc != null) {
+      if (_ready(idle, inc)) {
+        final f = _pendingPass!;
         _start(cur.playing ? f : TransitionFx.cut, app.settings.fxDur[f] ?? 4);
-      } else {
-        _incoming = null;
+        return;
       }
-      return;
+      if (app.deckError(idle)) {
+        // The track that should come in can't be read: drop it and get the real next one ready.
+        _pendingPass = null;
+        _incoming = null;
+        _idleTrack = null;
+        _preloadNext();
+        notifyListeners();
+        return;
+      }
     }
 
-    if (_transitioning) return;
-    final hasNext = next != null && nx.ready;
-    if (app.settings.autoCrossfade &&
-        hasNext &&
-        cur.playing &&
-        cur.duration > 0 &&
-        cur.remaining <= app.settings.autoSec) {
-      _incoming = nextIndex;
+    final n = next;
+    final hasNext = n != null && _ready(idle, n);
+    if (app.settings.autoCrossfade && hasNext && cur.playing && cur.duration > 0 && cur.remaining <= app.settings.autoSec) {
+      _incoming = n;
       _start(TransitionFx.fade, max(0.2, cur.remaining));
       return;
     }
-    if (cur.ended && !cur.playing) {
+    if (cur.ended && !cur.playing && _pendingPass == null) {
       if (hasNext) {
-        _incoming = nextIndex;
+        _incoming = n;
         _start(TransitionFx.cut, 0);
-      } else if (next == null) {
+      } else if (n == null) {
         // End of the queue: rewind and wait.
         CsAudio.seek(active, 0);
         notifyListeners();
       }
     }
     // Error on the incoming deck: skip that track.
-    if (nx.error && next != null && _idlePath == next!.path) {
+    if (n != null && identical(_idleTrack, n) && app.deckError(idle)) {
       final bad = nextIndex!;
       queue.removeAt(bad);
       if (bad < index) index--;
+      _idleTrack = null;
       _preloadNext();
       notifyListeners();
     }

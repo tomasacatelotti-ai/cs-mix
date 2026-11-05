@@ -82,14 +82,14 @@ class _EntrySheetState extends State<_EntrySheet> {
             Row(children: [
               Expanded(
                 child: SecondaryButton('Solo esta vez', height: 50, onTap: () {
-                  app.player.setNextEntry(sec, save: false);
+                  app.player.setNextEntry(widget.track, sec, save: false);
                   Navigator.of(context).pop();
                 }),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: PrimaryButton('Guardar en el tema', height: 50, size: 18, onTap: () {
-                  app.player.setNextEntry(sec, save: true);
+                  app.player.setNextEntry(widget.track, sec, save: true);
                   Navigator.of(context).pop();
                 }),
               ),

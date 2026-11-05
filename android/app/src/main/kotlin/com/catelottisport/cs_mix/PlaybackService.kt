@@ -19,7 +19,15 @@ class PlaybackService : Service() {
         private const val CHANNEL = "cs_mix_playback"
         private const val NOTIFICATION_ID = 1
 
+        var instance: PlaybackService? = null
+
         fun update(ctx: Context, title: String, playing: Boolean) {
+            val running = instance
+            if (running != null) {
+                // Already in the foreground: just refresh the notification.
+                running.refresh(title, playing)
+                return
+            }
             val i = Intent(ctx, PlaybackService::class.java)
                 .putExtra("title", title)
                 .putExtra("playing", playing)
@@ -53,6 +61,24 @@ class PlaybackService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, n)
         }
+        instance = this
+        wakeFor(playing)
+        return START_NOT_STICKY
+    }
+
+    fun refresh(title: String, playing: Boolean) {
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(NOTIFICATION_ID, build(title, playing))
+        wakeFor(playing)
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Swiped away from recents: stop the music together with the app.
+        stopSelf()
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
+
+    private fun wakeFor(playing: Boolean) {
         if (playing) {
             if (wake == null) {
                 val pm = getSystemService(POWER_SERVICE) as PowerManager
@@ -61,15 +87,15 @@ class PlaybackService : Service() {
                 }
             }
             wake?.acquire(6 * 60 * 60 * 1000L)
-        } else {
+        } else if (wake?.isHeld == true) {
             wake?.release()
         }
-        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
-        wake?.release()
+        if (wake?.isHeld == true) wake?.release()
         wake = null
+        instance = null
         super.onDestroy()
     }
 

@@ -26,6 +26,35 @@ class Track {
   bool analyzed = false;
   bool failed = false;
 
+  /// Analysis format; tracks below [analysisVersion] are analyzed again.
+  int version = 0;
+  static const analysisVersion = 2;
+
+  /// 0..11 major (C..B), 12..23 minor, -1 unknown.
+  int key = -1;
+  double keyConf = 0;
+  double loudDb = 0;
+  double onsetRate = 0;
+  double pulse = 0;
+  double brightness = 0;
+
+  /// 0..1 mix of loudness, hits per second and tempo.
+  double energy = 0;
+  String mood = '';
+  String genreTag = '';
+  bool hasCover = false;
+
+  /// Shared from the gym PC (path starts with "csnet:").
+  bool get remote => path.startsWith('csnet:');
+
+  // Listening history.
+  int plays = 0;
+  int skips = 0;
+  int lastPlayed = 0; // ms since epoch
+
+  /// Title/artist fixed by the user or by recognition (the file is never renamed).
+  bool fixedName = false;
+
   /// Saved entry point for transitions (seconds).
   double? entry;
 
@@ -68,6 +97,21 @@ class Track {
         'i': intro,
         'ok': analyzed,
         'f': failed,
+        'v': version,
+        'k': key,
+        'kc': keyConf,
+        'ld': loudDb,
+        'or': onsetRate,
+        'pu': pulse,
+        'br': brightness,
+        'en': energy,
+        'mo': mood,
+        'gt': genreTag,
+        'cv': hasCover,
+        if (plays > 0) 'pl': plays,
+        if (skips > 0) 'sk': skips,
+        if (lastPlayed > 0) 'lp': lastPlayed,
+        if (fixedName) 'fx': true,
         if (entry != null) 'e': entry,
         if (cue != null) 'c': cue,
         if (hotcues.any((h) => h != null)) 'h': hotcues,
@@ -88,6 +132,21 @@ class Track {
     t.intro = (j['i'] as num?)?.toDouble() ?? 0;
     t.analyzed = j['ok'] as bool? ?? false;
     t.failed = j['f'] as bool? ?? false;
+    t.version = (j['v'] as num?)?.toInt() ?? 0;
+    t.key = (j['k'] as num?)?.toInt() ?? -1;
+    t.keyConf = (j['kc'] as num?)?.toDouble() ?? 0;
+    t.loudDb = (j['ld'] as num?)?.toDouble() ?? 0;
+    t.onsetRate = (j['or'] as num?)?.toDouble() ?? 0;
+    t.pulse = (j['pu'] as num?)?.toDouble() ?? 0;
+    t.brightness = (j['br'] as num?)?.toDouble() ?? 0;
+    t.energy = (j['en'] as num?)?.toDouble() ?? 0;
+    t.mood = j['mo'] as String? ?? '';
+    t.genreTag = j['gt'] as String? ?? '';
+    t.hasCover = j['cv'] as bool? ?? false;
+    t.plays = (j['pl'] as num?)?.toInt() ?? 0;
+    t.skips = (j['sk'] as num?)?.toInt() ?? 0;
+    t.lastPlayed = (j['lp'] as num?)?.toInt() ?? 0;
+    t.fixedName = j['fx'] as bool? ?? false;
     t.entry = (j['e'] as num?)?.toDouble();
     t.cue = (j['c'] as num?)?.toDouble();
     final h = j['h'];
@@ -162,6 +221,20 @@ class Settings {
   bool shuffle = false;
   bool repeat = false;
 
+  // Network library.
+  bool shareEnabled = false;
+  String sharePin = '';
+  String shareName = 'PC del gimnasio';
+  bool autostart = false;
+  String netHost = '';
+  String netPin = '';
+  String netName = '';
+  int cacheLimitMb = 2048;
+
+  // Recognition (AcoustID application key) and things to get.
+  String acoustidKey = '';
+  List<String> wishlist = [];
+
   Map<String, Object?> toJson() => {
         'root': libraryRoot,
         'pc': pcRoot,
@@ -180,6 +253,16 @@ class Settings {
         'delay': cueDelayMs,
         'shuffle': shuffle,
         'repeat': repeat,
+        'share': shareEnabled,
+        'pin': sharePin,
+        'shareName': shareName,
+        'autostart': autostart,
+        'netHost': netHost,
+        'netPin': netPin,
+        'netName': netName,
+        'cacheMb': cacheLimitMb,
+        'acoustid': acoustidKey,
+        'wish': wishlist,
       };
 
   static Settings fromJson(Map<String, Object?> j) {
@@ -208,6 +291,16 @@ class Settings {
     s.cueDelayMs = (j['delay'] as num?)?.toDouble() ?? 200;
     s.shuffle = j['shuffle'] as bool? ?? false;
     s.repeat = j['repeat'] as bool? ?? false;
+    s.shareEnabled = j['share'] as bool? ?? false;
+    s.sharePin = j['pin'] as String? ?? '';
+    s.shareName = j['shareName'] as String? ?? s.shareName;
+    s.autostart = j['autostart'] as bool? ?? false;
+    s.netHost = j['netHost'] as String? ?? '';
+    s.netPin = j['netPin'] as String? ?? '';
+    s.netName = j['netName'] as String? ?? '';
+    s.cacheLimitMb = (j['cacheMb'] as num?)?.toInt() ?? 2048;
+    s.acoustidKey = j['acoustid'] as String? ?? '';
+    s.wishlist = [for (final w in (j['wish'] as List? ?? const [])) '$w'];
     return s;
   }
 }
@@ -235,3 +328,63 @@ String fxDescription(TransitionFx fx) => switch (fx) {
       TransitionFx.brake => 'El tema actual se frena como un tocadiscos que se apaga y entra el próximo.',
       TransitionFx.cut => 'Cambio instantáneo, sin efecto.',
     };
+
+// ---------------------------------------------------------------- keys
+
+const _keyNames = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+
+// Camelot number for each pitch class: majors (B) and minors (A).
+const _camelotMajor = [8, 3, 10, 5, 12, 7, 2, 9, 4, 11, 6, 1];
+const _camelotMinor = [5, 12, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10];
+
+String keyName(int key) {
+  if (key < 0 || key > 23) return '';
+  return key < 12 ? _keyNames[key] : '${_keyNames[key - 12]}m';
+}
+
+/// Camelot code ("8A", "9B") used by DJs to mix in key.
+String camelot(int key) {
+  if (key < 0 || key > 23) return '';
+  return key < 12 ? '${_camelotMajor[key]}B' : '${_camelotMinor[key - 12]}A';
+}
+
+({int n, bool minor})? _cam(int key) {
+  if (key < 0 || key > 23) return null;
+  return key < 12 ? (n: _camelotMajor[key], minor: false) : (n: _camelotMinor[key - 12], minor: true);
+}
+
+/// 0 same key, 1 neighbour (±1 or relative major/minor), 2 or more = clash.
+int keyDistance(int a, int b) {
+  final x = _cam(a), y = _cam(b);
+  if (x == null || y == null) return 1;
+  final d = ((x.n - y.n) % 12 + 12) % 12;
+  final ring = d > 6 ? 12 - d : d;
+  if (x.minor == y.minor) return ring;
+  return ring == 0 ? 1 : ring + 1;
+}
+
+// ---------------------------------------------------------------- energy / mood
+
+/// Energy from loudness, hits per second and tempo (0..1).
+double energyOf({required double loudDb, required double onsetRate, required double bpm, required double brightness}) {
+  final loud = ((loudDb + 20) / 14).clamp(0.0, 1.0); // -20 dBFS .. -6 dBFS
+  final hits = (onsetRate / 7).clamp(0.0, 1.0);
+  final tempo = bpm <= 0 ? 0.5 : ((bpm - 70) / 70).clamp(0.0, 1.0);
+  final bright = (brightness / 0.35).clamp(0.0, 1.0);
+  return (0.35 * loud + 0.3 * hits + 0.2 * tempo + 0.15 * bright).clamp(0.0, 1.0);
+}
+
+const moods = ['Enérgico', 'Festivo', 'Intenso', 'Melódico', 'Tranquilo'];
+
+/// Mood from audio features (no neural network): energy, beat clarity and major/minor.
+String moodOf({required double energy, required double pulse, required int key, required double brightness}) {
+  final minor = key >= 12;
+  if (energy < 0.35) return 'Tranquilo';
+  if (energy >= 0.62) {
+    if (minor && brightness < 0.3) return 'Intenso';
+    return pulse >= 0.3 && !minor ? 'Festivo' : 'Enérgico';
+  }
+  if (pulse >= 0.32 && !minor) return 'Festivo';
+  return minor ? 'Melódico' : (pulse < 0.22 ? 'Melódico' : 'Festivo');
+}
+

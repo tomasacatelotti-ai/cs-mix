@@ -183,6 +183,7 @@ struct Deck {
   std::atomic<float> level{0.f};
   std::atomic<int> dir{1};
   std::atomic<float> fxRate{1.f};  // set by transitions (reverse = -1, brake ramps to 0)
+  std::atomic<double> loadSeek{-1.0};  // a seek asked for while the track was still loading
 
   // Audio thread only.
   Track* cur = nullptr;
@@ -301,6 +302,12 @@ void doLoad(Deck* d, const std::string& path, double startSec) {
   d->durSec.store(static_cast<double>(t->length) / t->sr);
   d->dir.store(1);
   d->fxRate.store(1.f);
+  double ls = d->loadSeek.exchange(-1.0);
+  if (ls >= 0) {
+    t->startFrame = std::clamp<int64_t>(static_cast<int64_t>(ls * t->sr), 0, t->length - 1);
+    d->posSec.store(static_cast<double>(t->startFrame) / t->sr);
+  }
+  d->seekReq.store(-1.0);
   Track* old = d->track.exchange(t, std::memory_order_acq_rel);
   retire(old, nullptr);
   d->state.store(CSA_DECK_READY);
@@ -423,6 +430,8 @@ struct Engine {
 
   std::atomic<int> trSeq{0};
   int trSeen = 0;
+  std::atomic<int> trCancel{0};
+  int trCancelSeen = 0;
   std::atomic<int> trTo{1}, trType{0};
   std::atomic<float> trSec{4.f};
   std::atomic<int> trActive{0};
@@ -432,7 +441,9 @@ struct Engine {
   std::vector<float> ring;
   int64_t ringFrames = kOutSr * 2;
   std::atomic<int64_t> wpos{0}, rpos{0};
-  bool cuePrimed = false;
+  bool cuePrimed = false;            // cue audio thread only
+  std::atomic<int> cueReset{0};
+  int cueResetSeen = 0;
   std::atomic<float> cueDelayMs{200.f};
   std::atomic<float> cueMix{0.f};
   std::atomic<bool> cueRingOn{false};
@@ -443,7 +454,7 @@ struct Engine {
   std::atomic<int> routeEvents{0};  // bit 1 master rerouted, bit 2 cue rerouted
 
   std::atomic<bool> tone{false};
-  int64_t toneClock = 0;
+  int64_t toneClock = 0;             // master audio thread only
 
   float bufA[kMaxBlock * 2], bufB[kMaxBlock * 2], cueBuf[kMaxBlock * 2];
 
@@ -537,6 +548,16 @@ inline float softLimit(float x) {
 
 // Advances the transition automation by one block; returns the crossfader target.
 float stepTransition(Engine& e, int frames) {
+  int cancel = e.trCancel.load(std::memory_order_acquire);
+  if (cancel != e.trCancelSeen) {
+    e.trCancelSeen = cancel;
+    e.trSeen = e.trSeq.load(std::memory_order_acquire);  // drop a queued one too
+    if (e.tr.active) {
+      e.decks[e.tr.from].fxRate.store(1.f);
+      e.tr.active = false;
+    }
+    e.trActive.store(0);
+  }
   int seq = e.trSeq.load(std::memory_order_acquire);
   if (seq != e.trSeen) {
     e.trSeen = seq;
@@ -672,6 +693,11 @@ void renderMaster(Engine& e, float* out, int frames, float* cueOut) {
 }
 
 void renderCue(Engine& e, float* out, int frames) {
+  int cr = e.cueReset.load(std::memory_order_acquire);
+  if (cr != e.cueResetSeen) {
+    e.cueResetSeen = cr;
+    e.cuePrimed = false;
+  }
   if (e.cueStatus.load(std::memory_order_relaxed) != 1) {
     std::memset(out, 0, sizeof(float) * frames * 2);
     e.rpos.store(e.wpos.load(std::memory_order_acquire), std::memory_order_release);
@@ -876,7 +902,7 @@ int32_t csa_open_cue(int32_t index, int32_t android_id) {
   int32_t r = openDevice(*gEng, gEng->cue, gEng->cueOk, index, android_id, cbCue);
   if (r == 0) {
     gEng->rpos.store(gEng->wpos.load());
-    gEng->cuePrimed = false;
+    gEng->cueReset.fetch_add(1);
     gEng->cueRingOn.store(true);
     gEng->cueStatus.store(1);
   }
@@ -902,6 +928,7 @@ int32_t csa_deck_load(int32_t deck, const char* path, double start_sec) {
   if (!gEng || deck < 0 || deck > 1 || !path) return -1;
   Deck& d = gEng->decks[deck];
   d.state.store(CSA_DECK_LOADING);
+  d.loadSeek.store(-1.0);
   {
     std::lock_guard<std::mutex> lk(d.m);
     d.pendingPath = path;
@@ -946,6 +973,15 @@ void csa_deck_play(int32_t deck, int32_t play) {
 void csa_deck_seek(int32_t deck, double sec) {
   if (!gEng || deck < 0 || deck > 1) return;
   Deck& d = gEng->decks[deck];
+  if (d.state.load() == CSA_DECK_LOADING) {
+    // Applies to the track being loaded, not the one still on the deck.
+    d.loadSeek.store(std::max(0.0, sec));
+    {
+      std::lock_guard<std::mutex> lk(d.m);
+      if (d.hasPending) d.pendingStart = std::max(0.0, sec);
+    }
+    return;
+  }
   d.seekReq.store(std::max(0.0, sec));
   d.posSec.store(std::max(0.0, sec));
   d.cv.notify_all();
@@ -988,6 +1024,12 @@ void csa_transition(int32_t to_deck, int32_t type, float seconds) {
 
 int32_t csa_transition_active(void) { return gEng ? gEng->trActive.load() : 0; }
 
+void csa_transition_cancel(void) {
+  if (!gEng) return;
+  gEng->trActive.store(0);
+  gEng->trCancel.fetch_add(1, std::memory_order_release);
+}
+
 void csa_set_eq(int32_t band, float db) {
   if (!gEng || band < 0 || band > 4) return;
   gEng->eqDb[band].store(std::clamp(db, -12.f, 12.f));
@@ -1008,7 +1050,6 @@ void csa_set_cue_mix(float m) {
 
 void csa_test_tone(int32_t on) {
   if (!gEng) return;
-  gEng->toneClock = 0;
   gEng->tone.store(on != 0);
 }
 

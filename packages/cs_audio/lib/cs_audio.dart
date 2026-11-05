@@ -156,6 +156,7 @@ class _Bindings {
         transition = lib.lookupFunction<Void Function(Int32, Int32, Float), void Function(int, int, double)>(
             'csa_transition'),
         transitionActive = lib.lookupFunction<_IntV, _IntD>('csa_transition_active'),
+        transitionCancel = lib.lookupFunction<_VoidV, _VoidD>('csa_transition_cancel'),
         setEq = lib.lookupFunction<Void Function(Int32, Float), void Function(int, double)>('csa_set_eq'),
         setMasterVolume = lib.lookupFunction<Void Function(Float), void Function(double)>('csa_set_master_volume'),
         setCueDelayMs = lib.lookupFunction<Void Function(Float), void Function(double)>('csa_set_cue_delay_ms'),
@@ -189,6 +190,7 @@ class _Bindings {
   final void Function(int) setCurve;
   final void Function(int, int, double) transition;
   final _IntD transitionActive;
+  final _VoidD transitionCancel;
   final void Function(int, double) setEq;
   final void Function(double) setMasterVolume;
   final void Function(double) setCueDelayMs;
@@ -305,6 +307,7 @@ class CsAudio {
   static void transition(int toDeck, TransitionFx fx, double seconds) =>
       _b.transition(toDeck, fx.index, seconds);
   static bool get transitionActive => _b.transitionActive() == 1;
+  static void cancelTransition() => _b.transitionCancel();
   static void setEq(int band, double db) => _b.setEq(band, db);
   static void setMasterVolume(double v) => _b.setMasterVolume(v);
   static void setCueDelayMs(double ms) => _b.setCueDelayMs(ms);

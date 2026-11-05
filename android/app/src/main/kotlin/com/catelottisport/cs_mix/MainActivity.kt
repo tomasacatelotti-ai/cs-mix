@@ -23,6 +23,8 @@ class MainActivity : FlutterActivity() {
         var channel: MethodChannel? = null
     }
 
+    private var deviceCallback: AudioDeviceCallback? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -38,17 +40,21 @@ class MainActivity : FlutterActivity() {
         channel = ch
         // Tell Dart when outputs come and go (Bluetooth reconnects, headphones plugged).
         val am = getSystemService(AUDIO_SERVICE) as AudioManager
-        am.registerAudioDeviceCallback(object : AudioDeviceCallback() {
+        deviceCallback?.let { am.unregisterAudioDeviceCallback(it) }
+        val cb = object : AudioDeviceCallback() {
             override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>?) {
                 channel?.invokeMethod("devicesChanged", null)
             }
             override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>?) {
                 channel?.invokeMethod("devicesChanged", null)
             }
-        }, Handler(Looper.getMainLooper()))
+        }
+        deviceCallback = cb
+        am.registerAudioDeviceCallback(cb, Handler(Looper.getMainLooper()))
         ch.setMethodCallHandler { call, result ->
             when (call.method) {
                 "appDir" -> result.success(filesDir.absolutePath)
+                "deviceName" -> result.success("${Build.MANUFACTURER} ${Build.MODEL}")
                 "externalRoot" -> result.success(Environment.getExternalStorageDirectory().absolutePath)
                 "storageRoots" -> result.success(storageRoots())
                 "hasStorage" -> result.success(hasStorage())
@@ -81,9 +87,16 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        if (isFinishing) PlaybackService.stop(this)
+        deviceCallback?.let { (getSystemService(AUDIO_SERVICE) as AudioManager).unregisterAudioDeviceCallback(it) }
+        deviceCallback = null
         channel = null
         super.onDestroy()
+        if (isFinishing) {
+            // The audio engine lives in this process: without the screen it would keep
+            // playing with no controls, so closing the app really closes it.
+            PlaybackService.stop(this)
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }
     }
 
     private fun hasStorage(): Boolean =

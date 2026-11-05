@@ -82,6 +82,8 @@ CSA_API float csa_get_crossfader(void);
 CSA_API void csa_set_curve(int32_t curve);  // 0 linear, 1 constant power
 CSA_API void csa_transition(int32_t to_deck, int32_t type, float seconds);
 CSA_API int32_t csa_transition_active(void);
+// Stops a running transition right where it is (new playlist, mode change).
+CSA_API void csa_transition_cancel(void);
 CSA_API void csa_set_eq(int32_t band, float db);  // bands 0..4: 60, 230, 910, 3600, 14000 Hz
 CSA_API void csa_set_master_volume(float v);
 CSA_API void csa_set_cue_delay_ms(float ms);

@@ -33,10 +33,8 @@ class DjController extends ChangeNotifier {
   void load(int deck, Track t) {
     enter();
     decks[deck] = t;
-    CsAudio.load(deck, t.path, t.cue ?? 0);
-    CsAudio.setGainDb(deck, app.gainFor(t));
+    app.loadDeck(deck, t, t.cue ?? 0);
     CsAudio.setPitch(deck, pitch[deck]);
-    app.library.prioritize(t);
     notifyListeners();
   }
 

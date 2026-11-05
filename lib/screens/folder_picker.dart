@@ -37,6 +37,7 @@ class _FolderPickerState extends State<FolderPicker> {
   Future<void> _open(String? path) async {
     _error = null;
     if (path == null) {
+      if (!mounted) return;
       setState(() {
         _path = null;
         _dirs = [];
@@ -52,12 +53,13 @@ class _FolderPickerState extends State<FolderPicker> {
         }
       }
       list.sort((a, b) => a.path.toLowerCase().compareTo(b.path.toLowerCase()));
+      if (!mounted) return;
       setState(() {
         _path = path;
         _dirs = list;
       });
     } catch (e) {
-      setState(() => _error = 'No se puede abrir esta carpeta.');
+      if (mounted) setState(() => _error = 'No se puede abrir esta carpeta.');
     }
   }
 

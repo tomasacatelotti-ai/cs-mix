@@ -47,6 +47,17 @@ class Native {
     });
   }
 
+  static Future<String> deviceName() async {
+    if (Platform.isAndroid) {
+      try {
+        return await _ch.invokeMethod<String>('deviceName') ?? 'Celular';
+      } catch (_) {
+        return 'Celular';
+      }
+    }
+    return Platform.localHostname;
+  }
+
   static Future<String> appDir() async {
     String dir;
     if (Platform.isAndroid) {

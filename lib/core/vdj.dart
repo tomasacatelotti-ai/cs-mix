@@ -131,7 +131,14 @@ class Vdj {
         }
       }
       // 3. Same size and close name, then artist + title.
-      if (hit == null && e.size > 0) hit = bySize[e.size]?.firstOrNull;
+      if (hit == null && e.size > 0) {
+        // Same size only counts when the names look alike too (WAV files often share sizes).
+        final want = _norm(e.fileName.replaceAll(RegExp(r'\.[^.]+$'), ''));
+        hit = bySize[e.size]?.where((t) {
+          final have = _norm(t.fileName.replaceAll(RegExp(r'\.[^.]+$'), ''));
+          return want.isNotEmpty && (have.contains(want) || want.contains(have));
+        }).firstOrNull;
+      }
       if (hit == null && e.artist.isNotEmpty) hit = byMeta['${_norm(e.artist)}|${_norm(e.title)}'];
 
       if (hit == null) {

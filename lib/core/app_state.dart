@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'dj_controller.dart';
 import 'library.dart';
 import 'models.dart';
+import 'net.dart';
 import 'platform.dart';
 import 'player_controller.dart';
 
@@ -49,6 +50,10 @@ class AppState extends ChangeNotifier {
   late final PlayerController player;
   late final DjController dj;
 
+  /// PC side: shares the library. Phone side: uses the PC's library.
+  late final LibraryServer server;
+  late final NetClient net;
+
   Mode mode = Mode.none;
   bool ready = false;
   bool hasStorage = true;
@@ -69,12 +74,17 @@ class AppState extends ChangeNotifier {
   Future<void> init() async {
     try {
       dataDir = await Native.appDir();
-      if (await _settingsFile.exists()) {
-        settings = Settings.fromJson(Map<String, Object?>.from(jsonDecode(await _settingsFile.readAsString()) as Map));
-      }
+      settings = await _loadSettings();
       if (settings.libraryRoot.isEmpty) settings.libraryRoot = await Native.defaultMusicRoot();
+      if (settings.sharePin.isEmpty) {
+        settings.sharePin = newPin();
+        saveSettings();
+      }
       library = LibraryStore(dataDir);
       await library.load();
+      server = LibraryServer(library);
+      net = NetClient(library, dataDir, deviceName: await Native.deviceName());
+      net.cacheLimitMb = settings.cacheLimitMb;
 
       if (!CsAudio.init()) outputError = 'No se pudo iniciar el audio: ${CsAudio.lastError()}';
       await openOutputs();
@@ -90,6 +100,8 @@ class AppState extends ChangeNotifier {
       hasStorage = await Native.hasStorageAccess();
       if (hasStorage) unawaited(library.scan(settings.libraryRoot));
       library.watch(() => hasStorage ? settings.libraryRoot : '');
+      if (settings.shareEnabled) unawaited(server.start(pin: settings.sharePin, name: settings.shareName));
+      if (settings.netHost.isNotEmpty) unawaited(net.resume(settings.netHost, settings.netPin, settings.netName));
     } catch (e) {
       startupError = '$e';
     }
@@ -104,16 +116,118 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<Settings> _loadSettings() async {
+    try {
+      if (await _settingsFile.exists()) {
+        return Settings.fromJson(Map<String, Object?>.from(jsonDecode(await _settingsFile.readAsString()) as Map));
+      }
+    } catch (e) {
+      // A half-written file must never keep the app from starting.
+      debugPrint('settings load: $e');
+      try {
+        await _settingsFile.rename('${_settingsFile.path}.bad');
+      } catch (_) {}
+    }
+    return Settings();
+  }
+
   void saveSettings() {
     _settingsTimer?.cancel();
     _settingsTimer = Timer(const Duration(milliseconds: 600), () async {
       try {
-        await _settingsFile.writeAsString(jsonEncode(settings.toJson()), flush: true);
+        final tmp = File('${_settingsFile.path}.tmp');
+        await tmp.writeAsString(jsonEncode(settings.toJson()), flush: true);
+        if (Platform.isWindows && await _settingsFile.exists()) await _settingsFile.delete();
+        await tmp.rename(_settingsFile.path);
       } catch (e) {
         debugPrint('settings save: $e');
       }
     });
     notifyListeners();
+  }
+
+  // ------------------------------------------------------------------ decks
+
+  final List<String?> _deckWant = [null, null];
+  final List<bool> _deckFetching = [false, false];
+  final List<bool> _deckFetchFailed = [false, false];
+
+  /// Loads a track on a deck; shared tracks are downloaded from the PC first.
+  void loadDeck(int d, Track t, double start) {
+    _deckWant[d] = t.path;
+    _deckFetchFailed[d] = false;
+    CsAudio.setGainDb(d, gainFor(t));
+    if (!t.remote) {
+      _deckFetching[d] = false;
+      CsAudio.load(d, t.path, start);
+      library.prioritize(t);
+      return;
+    }
+    CsAudio.unload(d);
+    _deckFetching[d] = true;
+    unawaited(net.fetchExtras(t));
+    net.fetch(t).then((local) {
+      if (_deckWant[d] != t.path) return; // something else was loaded meanwhile
+      _deckFetching[d] = false;
+      if (local == null) {
+        _deckFetchFailed[d] = true;
+      } else {
+        CsAudio.load(d, local, start);
+      }
+      notifyListeners();
+    });
+  }
+
+  void forgetDeck(int d) {
+    _deckWant[d] = null;
+    _deckFetching[d] = false;
+    _deckFetchFailed[d] = false;
+  }
+
+  /// The deck was asked to hold [t] (it may still be loading).
+  bool deckHolds(int d, Track t) => _deckWant[d] == t.path && !_deckFetching[d];
+  bool deckBusy(int d) => _deckFetching[d] || engine.decks[d].loading;
+  bool deckError(int d) => _deckFetchFailed[d] || engine.decks[d].error;
+  double? deckDownload(int d) {
+    final p = _deckWant[d];
+    return p == null || !_deckFetching[d] ? null : net.progress[p] ?? 0;
+  }
+
+  // ------------------------------------------------------------------ network
+
+  Future<void> setSharing(bool on) async {
+    settings.shareEnabled = on;
+    saveSettings();
+    if (on) {
+      await server.start(pin: settings.sharePin, name: settings.shareName);
+    } else {
+      await server.stop();
+    }
+    notifyListeners();
+  }
+
+  Future<void> changePin() async {
+    settings.sharePin = newPin();
+    saveSettings();
+    if (server.running) await server.start(pin: settings.sharePin, name: settings.shareName);
+  }
+
+  Future<String?> connectPc(String host, String pin, String name) async {
+    final err = await net.connect(host, pin);
+    if (err == null) {
+      settings.netHost = net.host;
+      settings.netPin = pin;
+      settings.netName = net.pcName.isEmpty ? name : net.pcName;
+      saveSettings();
+    }
+    return err;
+  }
+
+  void disconnectPc() {
+    net.disconnect();
+    settings.netHost = '';
+    settings.netPin = '';
+    saveSettings();
   }
 
   // ------------------------------------------------------------------ audio
@@ -242,11 +356,13 @@ class AppState extends ChangeNotifier {
   /// Both modes share the two decks: switching mode stops everything.
   void setMode(Mode m) {
     if (mode == m) return;
+    CsAudio.cancelTransition();
     for (var d = 0; d < 2; d++) {
       CsAudio.play(d, false);
       CsAudio.unload(d);
       CsAudio.setPfl(d, false);
       CsAudio.setPitch(d, 0);
+      forgetDeck(d);
     }
     CsAudio.setCrossfader(0);
     player.reset();
@@ -256,10 +372,34 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  final List<String?> _countedOn = [null, null];
+
+  /// Track sitting on a deck right now.
+  Track? trackOnDeck(int d) {
+    if (mode == Mode.dj) return dj.decks[d];
+    if (mode == Mode.player) return d == player.active ? player.current : player.next;
+    return null;
+  }
+
   void _tick() {
     if (mode == Mode.player) player.tick();
     if (mode == Mode.dj) dj.tick();
+    // History: a play counts once a track has sounded for 30 s on a deck.
+    for (var d = 0; d < 2; d++) {
+      final s = engine.decks[d];
+      final t = trackOnDeck(d);
+      if (t == null || !s.playing) continue;
+      if (s.position >= 30 && _countedOn[d] != t.path) {
+        _countedOn[d] = t.path;
+        library.recordPlay(t);
+      }
+    }
     _syncService();
+  }
+
+  /// The player calls this when a track is left before it counted as played.
+  void noteSkip(Track t, double position) {
+    if (position < 30) library.recordSkip(t);
   }
 
   void _syncService() {
@@ -274,6 +414,7 @@ class AppState extends ChangeNotifier {
       final t = dj.decks[deck];
       if (t != null) title = t.title;
     }
+    net.nowPlaying = title;
     if (playing != _servicePlaying || title != _serviceTitle) {
       final wasActive = _servicePlaying || _serviceTitle.isNotEmpty;
       _servicePlaying = playing;

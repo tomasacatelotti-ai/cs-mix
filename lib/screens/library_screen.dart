@@ -208,7 +208,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   Widget _breadcrumb(String cur) {
     final root = _root;
-    final rel = root.isEmpty ? cur : cur.substring(root.length).replaceFirst(RegExp('^/'), '');
+    final rel = root.isEmpty || !cur.startsWith(root) ? cur : cur.substring(root.length).replaceFirst(RegExp('^/'), '');
     final segs = rel.isEmpty ? <String>[] : rel.split('/');
     final crumbs = <(String, String)>[('Todo', root)];
     for (var k = 0; k < segs.length; k++) {
