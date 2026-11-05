@@ -207,6 +207,8 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void restart() => seek(0);
+
   void seek(double sec) {
     if (current == null) return;
     CsAudio.seek(active, sec);

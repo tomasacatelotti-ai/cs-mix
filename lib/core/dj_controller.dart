@@ -42,6 +42,12 @@ class DjController extends ChangeNotifier {
 
   DeckSnapshot snap(int deck) => app.engine.decks[deck];
 
+  /// Back to 0:00, keeping play/pause as it was.
+  void restart(int deck) {
+    if (decks[deck] == null) return;
+    CsAudio.seek(deck, 0);
+  }
+
   void togglePlay(int deck) {
     if (decks[deck] == null) return;
     CsAudio.play(deck, !snap(deck).playing);

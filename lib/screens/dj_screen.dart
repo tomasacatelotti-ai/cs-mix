@@ -230,6 +230,17 @@ class _DjScreenState extends State<DjScreen> {
         const SizedBox(height: 4),
         Row(children: [
           Expanded(
+            child: SquareButton(
+              icon: Icons.first_page,
+              size: 46,
+              color: Colors.transparent,
+              border: CS.linea,
+              tooltip: 'Volver al inicio del tema',
+              onTap: t == null ? null : () => dj.restart(d),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
             child: Material(
               color: Colors.transparent,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(CS.radio), side: const BorderSide(color: CS.linea)),

@@ -94,8 +94,18 @@ class PlayerScreen extends StatelessWidget {
           onSeek: deck.duration > 0 ? (f) => p.seek(f * deck.duration) : null,
         ),
         const SizedBox(height: 4),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Row(children: [
           Text(fmtTime(deck.position), style: CS.body(13, color: CS.humo)),
+          Expanded(
+            child: Center(
+              child: TextButton.icon(
+                onPressed: p.restart,
+                style: TextButton.styleFrom(foregroundColor: CS.blanco, minimumSize: const Size(44, 36)),
+                icon: const Icon(Icons.first_page, size: 20),
+                label: Text('Volver al inicio', style: CS.body(13)),
+              ),
+            ),
+          ),
           Text(fmtTime(deck.remaining, negative: true), style: CS.body(13, color: CS.humo)),
         ]),
         const SizedBox(height: 10),
