@@ -85,7 +85,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: MinGW (32 bits)
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq g++-mingw-w64-i686-posix gcc-mingw-w64-i686-posix binutils-mingw-w64-i686 zip
+        timeout-minutes: 8
+        run: |
+          for i in 1 2 3; do
+            timeout 150 sudo apt-get update -qq && timeout 300 sudo apt-get install -y -qq g++-mingw-w64-i686-posix gcc-mingw-w64-i686-posix binutils-mingw-w64-i686 zip && exit 0
+            echo "Intento $i falló, reintento"; sleep 10
+          done
+          exit 1
       - name: Build CS Mix Clásico
         run: windows-classic/build.sh "${{ env.APP_VERSION }}"
       - name: Zip
