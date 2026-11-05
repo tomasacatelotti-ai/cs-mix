@@ -54,6 +54,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 CsHeader(
                   title: 'CS Mix',
                   subtitle: 'Catelotti Sport',
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.asset('assets/logo.png', width: 48, height: 48, semanticLabel: 'Logo CS Mix'),
+                  ),
                   trailing: [IconBox(icon: Icons.tune, tooltip: 'Ajustes', onTap: () => _go(const SettingsScreen()))],
                 ),
                 Expanded(

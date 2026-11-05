@@ -46,7 +46,13 @@ class _Splash extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: Container(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: Image.asset('assets/logo.png', width: 160, height: 160, semanticLabel: 'Logo CS Mix'),
+          ),
+          const SizedBox(height: 24),
+          Container(
           padding: const EdgeInsets.only(left: 12),
           decoration: const BoxDecoration(border: Border(left: BorderSide(color: CS.rojo, width: 4))),
           child: Column(
@@ -58,6 +64,7 @@ class _Splash extends StatelessWidget {
             ],
           ),
         ),
+        ]),
       ),
     );
   }

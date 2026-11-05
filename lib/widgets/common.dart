@@ -7,12 +7,13 @@ import '../theme.dart';
 
 /// Header with back button and the red-bar brand block.
 class CsHeader extends StatelessWidget {
-  const CsHeader({super.key, required this.title, this.subtitle, this.onBack, this.trailing = const []});
+  const CsHeader({super.key, required this.title, this.subtitle, this.onBack, this.trailing = const [], this.leading});
 
   final String title;
   final String? subtitle;
   final VoidCallback? onBack;
   final List<Widget> trailing;
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) {
@@ -25,6 +26,7 @@ class CsHeader extends StatelessWidget {
             IconBox(icon: Icons.chevron_left, tooltip: 'Volver', onTap: onBack!),
             const SizedBox(width: 12),
           ],
+          if (leading != null) ...[leading!, const SizedBox(width: 12)],
           Expanded(
             child: Container(
               padding: const EdgeInsets.only(left: 12),
