@@ -506,3 +506,11 @@ void toast(BuildContext context, String text) {
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(content: Text(text), duration: const Duration(seconds: 3)));
 }
+
+/// Opens a screen so that "back" always lands on Inicio (no long history).
+void openScreen(BuildContext context, Widget screen) {
+  Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => screen), (r) => r.isFirst);
+}
+
+/// Back to Inicio from anywhere.
+void goHome(BuildContext context) => Navigator.of(context).popUntil((r) => r.isFirst);

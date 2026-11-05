@@ -19,6 +19,8 @@ class EngineModel extends ChangeNotifier {
   double crossfader = 0;
   bool transitioning = false;
   void Function()? onTick;
+  void Function()? onRouteChange;
+  int cueStatus = 0;
   Timer? _timer;
 
   void start() {
@@ -30,6 +32,8 @@ class EngineModel extends ChangeNotifier {
     decks = [CsAudio.info(0), CsAudio.info(1)];
     crossfader = CsAudio.crossfader;
     transitioning = CsAudio.transitionActive;
+    cueStatus = CsAudio.cueStatus;
+    if (CsAudio.takeRouteEvents() != 0) onRouteChange?.call();
     onTick?.call();
     notifyListeners();
   }
@@ -55,6 +59,10 @@ class AppState extends ChangeNotifier {
   bool _servicePlaying = false;
   String _serviceTitle = '';
   Timer? _settingsTimer;
+  Timer? _routeTimer;
+
+  /// The pre-listen was moved by the system and is muted until outputs reopen.
+  bool get cueMuted => engine.cueStatus == 2;
 
   File get _settingsFile => File('$dataDir${Platform.pathSeparator}settings.json');
 
@@ -75,8 +83,9 @@ class AppState extends ChangeNotifier {
       player = PlayerController(this);
       dj = DjController(this);
       engine.onTick = _tick;
+      engine.onRouteChange = routeChanged;
       engine.start();
-      Native.listenMedia(_onMedia);
+      Native.listenMedia(_onMedia, onDevices: routeChanged);
 
       hasStorage = await Native.hasStorageAccess();
       if (hasStorage) unawaited(library.scan(settings.libraryRoot));
@@ -122,28 +131,55 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// A device was connected, removed or the system moved a stream: reopen with explicit devices.
+  void routeChanged() {
+    _routeTimer?.cancel();
+    _routeTimer = Timer(const Duration(milliseconds: 1200), openOutputs);
+  }
+
+  /// Master device to open: the chosen one, or in "auto" the Bluetooth speaker when there is one
+  /// (pinned by id so plugging headphones can't steal the music from the speaker).
+  OutputDevice? _masterDevice() {
+    if (settings.masterDevice != 'auto') return _find(settings.masterDevice);
+    if (Platform.isAndroid && mode == Mode.dj) {
+      final bt = outputs.where((d) => d.kind == 'bluetooth').firstOrNull;
+      if (bt != null) return bt;
+      // No speaker: music on the phone speaker, headphones free for the pre-listen.
+      if (autoCue() != null) return outputs.where((d) => d.kind == 'speaker').firstOrNull;
+    }
+    return null;
+  }
+
   Future<void> openOutputs() async {
+    _routeTimer?.cancel();
     outputError = null;
     try {
       outputs = await Native.outputs();
     } catch (e) {
       outputs = [];
     }
-    final m = settings.masterDevice == 'auto' ? null : _find(settings.masterDevice);
+    final m = _masterDevice();
     var ok = CsAudio.openMaster(index: m?.index ?? -1, androidId: m?.androidId ?? 0);
     if (!ok && m != null) ok = CsAudio.openMaster();
     if (!ok) outputError = 'No se pudo abrir la salida principal. ${CsAudio.lastError()}';
 
+    // The pre-listen only exists in DJ mode.
     OutputDevice? c;
-    if (settings.cueDevice == 'auto') {
-      c = autoCue();
-    } else if (settings.cueDevice != 'off') {
-      c = _find(settings.cueDevice);
+    if (mode == Mode.dj) {
+      if (settings.cueDevice == 'auto') {
+        c = autoCue();
+      } else if (settings.cueDevice != 'off') {
+        c = _find(settings.cueDevice);
+      }
     }
     if (c != null && Platform.isAndroid && c.kind == 'bluetooth') {
       c = null;
       outputError = 'La pre-escucha no puede ir por Bluetooth: Android usa un solo dispositivo Bluetooth a la vez. '
           'Conectá los auriculares por cable o USB.';
+    }
+    if (c != null && m != null && c.key == m.key) {
+      c = null;
+      outputError = 'La pre-escucha y la salida principal son el mismo dispositivo: la pre-escucha queda apagada.';
     }
     if (c == null) {
       CsAudio.closeCue();
@@ -151,7 +187,8 @@ class AppState extends ChangeNotifier {
     } else {
       cueActive = CsAudio.openCue(index: c.index, androidId: c.androidId);
       if (!cueActive) {
-        outputError = 'Tu equipo no permite usar "${c.label}" para la pre-escucha al mismo tiempo que la salida principal.';
+        outputError = 'Tu celular no dejó mandar la pre-escucha a "${c.label}" por separado, así que quedó apagada '
+            'para que no suene en el parlante.';
       }
     }
     notifyListeners();
@@ -215,6 +252,7 @@ class AppState extends ChangeNotifier {
     player.reset();
     dj.reset();
     mode = m;
+    unawaited(openOutputs());
     notifyListeners();
   }
 

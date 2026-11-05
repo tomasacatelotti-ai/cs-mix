@@ -37,6 +37,11 @@
 #endif
 
 #include "miniaudio.h"
+#if defined(__ANDROID__)
+#include <dlfcn.h>
+#endif
+#include "chromaprint/chromaprint.h"
+#include "chromaprint/kissfft/kiss_fftr.h"
 
 namespace {
 
@@ -432,6 +437,11 @@ struct Engine {
   std::atomic<float> cueMix{0.f};
   std::atomic<bool> cueRingOn{false};
 
+  // Pre-listen safety: the cue only sounds while its route is the one we asked for.
+  // 0 closed, 1 ok, 2 muted because the system moved it (e.g. a Bluetooth reconnect).
+  std::atomic<int> cueStatus{0};
+  std::atomic<int> routeEvents{0};  // bit 1 master rerouted, bit 2 cue rerouted
+
   std::atomic<bool> tone{false};
   int64_t toneClock = 0;
 
@@ -662,6 +672,11 @@ void renderMaster(Engine& e, float* out, int frames, float* cueOut) {
 }
 
 void renderCue(Engine& e, float* out, int frames) {
+  if (e.cueStatus.load(std::memory_order_relaxed) != 1) {
+    std::memset(out, 0, sizeof(float) * frames * 2);
+    e.rpos.store(e.wpos.load(std::memory_order_acquire), std::memory_order_release);
+    return;
+  }
   int64_t w = e.wpos.load(std::memory_order_acquire);
   int64_t r = e.rpos.load(std::memory_order_relaxed);
   int64_t fill = w - r;
@@ -705,6 +720,35 @@ void cbCue(ma_device* dev, void* out, const void*, ma_uint32 frames) {
   renderCue(*e, static_cast<float*>(out), static_cast<int>(frames));
 }
 
+void cbNotify(const ma_device_notification* n) {
+  if (!n || !n->pDevice) return;
+  auto* e = static_cast<Engine*>(n->pDevice->pUserData);
+  if (!e) return;
+  if (n->type != ma_device_notification_type_rerouted && n->type != ma_device_notification_type_interruption_began)
+    return;
+  if (n->pDevice == &e->cue) {
+    // miniaudio reopens a moved stream on the default device, which is usually the
+    // Bluetooth speaker: silence the cue at once so the audience never hears it.
+    e->cueStatus.store(2);
+    e->routeEvents.fetch_or(2);
+  } else {
+    e->routeEvents.fetch_or(1);
+  }
+}
+
+#if defined(__ANDROID__)
+// Device the AAudio stream really plays on (0 if unknown).
+int32_t actualAaudioDevice(ma_device& dev) {
+  if (dev.pContext == nullptr || dev.pContext->backend != ma_backend_aaudio || dev.aaudio.pStreamPlayback == nullptr)
+    return 0;
+  static void* lib = dlopen("libaaudio.so", RTLD_NOW);
+  if (!lib) return 0;
+  using GetId = int32_t (*)(void*);
+  static auto fn = reinterpret_cast<GetId>(dlsym(lib, "AAudioStream_getDeviceId"));
+  return fn ? fn(dev.aaudio.pStreamPlayback) : 0;
+}
+#endif
+
 int32_t openDevice(Engine& e, ma_device& dev, bool& ok, int32_t index, int32_t androidId, ma_device_data_proc cb) {
   if (ok) {
     ma_device_uninit(&dev);
@@ -715,7 +759,10 @@ int32_t openDevice(Engine& e, ma_device& dev, bool& ok, int32_t index, int32_t a
   cfg.playback.channels = 2;
   cfg.sampleRate = kOutSr;
   cfg.dataCallback = cb;
+  cfg.notificationCallback = cbNotify;
   cfg.pUserData = &e;
+  cfg.aaudio.usage = ma_aaudio_usage_media;
+  cfg.aaudio.contentType = ma_aaudio_content_type_music;
   cfg.periodSizeInMilliseconds = 10;
   cfg.performanceProfile = ma_performance_profile_low_latency;
   ma_device_id id;
@@ -734,6 +781,16 @@ int32_t openDevice(Engine& e, ma_device& dev, bool& ok, int32_t index, int32_t a
     setError("No se pudo abrir la salida de audio.");
     return -1;
   }
+#if defined(__ANDROID__)
+  if (androidId > 0) {
+    int32_t real = actualAaudioDevice(dev);
+    if (real != 0 && real != androidId) {
+      ma_device_uninit(&dev);
+      setError("El sistema no dejó usar esa salida por separado.");
+      return -5;
+    }
+  }
+#endif
   if (ma_device_start(&dev) != MA_SUCCESS) {
     ma_device_uninit(&dev);
     setError("No se pudo iniciar la salida de audio.");
@@ -815,11 +872,13 @@ int32_t csa_open_cue(int32_t index, int32_t android_id) {
   if (!gEng) return -10;
   std::lock_guard<std::mutex> lk(gApiMutex);
   gEng->cueRingOn.store(false);
+  gEng->cueStatus.store(0);
   int32_t r = openDevice(*gEng, gEng->cue, gEng->cueOk, index, android_id, cbCue);
   if (r == 0) {
     gEng->rpos.store(gEng->wpos.load());
     gEng->cuePrimed = false;
     gEng->cueRingOn.store(true);
+    gEng->cueStatus.store(1);
   }
   return r;
 }
@@ -828,11 +887,16 @@ void csa_close_cue(void) {
   if (!gEng) return;
   std::lock_guard<std::mutex> lk(gApiMutex);
   gEng->cueRingOn.store(false);
+  gEng->cueStatus.store(0);
   if (gEng->cueOk) ma_device_uninit(&gEng->cue);
   gEng->cueOk = false;
 }
 
 int32_t csa_cue_open(void) { return gEng && gEng->cueOk ? 1 : 0; }
+
+int32_t csa_cue_status(void) { return gEng ? gEng->cueStatus.load() : 0; }
+
+int32_t csa_take_route_events(void) { return gEng ? gEng->routeEvents.exchange(0) : 0; }
 
 int32_t csa_deck_load(int32_t deck, const char* path, double start_sec) {
   if (!gEng || deck < 0 || deck > 1 || !path) return -1;
@@ -948,6 +1012,49 @@ void csa_test_tone(int32_t on) {
   gEng->tone.store(on != 0);
 }
 
+int32_t csa_fingerprint(const char* path, char* out, int32_t len, int32_t* duration_sec) {
+  if (!path || !out || len <= 0) return -1;
+  out[0] = 0;
+  constexpr int sr = 11025;
+  ma_decoder_config cfg = ma_decoder_config_init(ma_format_s16, 1, sr);
+  ma_decoder dec;
+  if (openDecoder(path, &cfg, &dec) != MA_SUCCESS) {
+    setError(std::string("No se pudo abrir: ") + path);
+    return -2;
+  }
+  ma_uint64 frames = 0;
+  ma_decoder_get_length_in_pcm_frames(&dec, &frames);
+  if (duration_sec) *duration_sec = static_cast<int32_t>(frames / sr);
+  ChromaprintContext* ctx = chromaprint_new(CHROMAPRINT_ALGORITHM_DEFAULT);
+  if (!ctx) {
+    ma_decoder_uninit(&dec);
+    return -3;
+  }
+  chromaprint_start(ctx, sr, 1);
+  std::vector<int16_t> buf(8192);
+  int64_t fed = 0;
+  const int64_t maxFrames = static_cast<int64_t>(sr) * 120;
+  while (fed < maxFrames) {
+    ma_uint64 got = 0;
+    ma_decoder_read_pcm_frames(&dec, buf.data(), buf.size(), &got);
+    if (got == 0) break;
+    chromaprint_feed(ctx, buf.data(), static_cast<int>(got));
+    fed += static_cast<int64_t>(got);
+  }
+  ma_decoder_uninit(&dec);
+  int32_t result = -4;
+  if (chromaprint_finish(ctx)) {
+    char* fp = nullptr;
+    if (chromaprint_get_fingerprint(ctx, &fp) && fp) {
+      std::snprintf(out, static_cast<size_t>(len), "%s", fp);
+      result = static_cast<int32_t>(std::strlen(out));
+      chromaprint_dealloc(fp);
+    }
+  }
+  chromaprint_free(ctx);
+  return result;
+}
+
 void csa_render_offline(float* out, int32_t frames, float* cue_out) {
   if (!gEng || !out) return;
   renderMaster(*gEng, out, frames, cue_out);
@@ -959,7 +1066,9 @@ void csa_render_offline(float* out, int32_t frames, float* cue_out) {
 int32_t csa_analyze(const char* path, CsaAnalysis* out, float* peaks, int32_t max_peaks) {
   if (!path || !out) return -1;
   std::memset(out, 0, sizeof(*out));
+  out->key = -1;
   constexpr int sr = 11025;
+  constexpr int fftN = 4096;               // ~0.37 s frames for key and brightness
   constexpr int hop = 110;                 // ~100 onset frames per second
   constexpr int peakHop = sr / 30;         // 30 overview values per second
   constexpr int loudWin = sr * 4 / 10;     // 0.4 s loudness windows
@@ -984,6 +1093,22 @@ int32_t csa_analyze(const char* path, CsaAnalysis* out, float* peaks, int32_t ma
   const double lpA = 1.0 - std::exp(-2 * kPi * 180.0 / sr);
   int64_t total = 0;
 
+  // Spectral frames: chroma (12 pitch classes) for the key, centroid for brightness.
+  kiss_fftr_cfg fft = kiss_fftr_alloc(fftN, 0, nullptr, nullptr);
+  std::vector<float> fbuf(fftN), win(fftN);
+  std::vector<kiss_fft_cpx> spec(fftN / 2 + 1);
+  for (int i = 0; i < fftN; ++i) win[i] = static_cast<float>(0.5 - 0.5 * std::cos(2 * kPi * i / (fftN - 1)));
+  std::vector<int> binPc(fftN / 2 + 1, -1);
+  for (int k = 1; k <= fftN / 2; ++k) {
+    double f = static_cast<double>(k) * sr / fftN;
+    if (f < 65.0 || f > 2100.0) continue;  // C2..C7
+    int midi = static_cast<int>(std::lround(69.0 + 12.0 * std::log2(f / 440.0)));
+    binPc[k] = ((midi % 12) + 12) % 12;
+  }
+  double chroma[12] = {0};
+  std::vector<std::pair<float, float>> frameCentroid;  // (energy, centroid Hz)
+  int fpos = 0;
+
   for (;;) {
     ma_uint64 got = 0;
     ma_decoder_read_pcm_frames(&dec, buf.data(), buf.size(), &got);
@@ -1005,6 +1130,28 @@ int32_t csa_analyze(const char* path, CsaAnalysis* out, float* peaks, int32_t ma
         winAcc = 0;
         winCount = 0;
       }
+      fbuf[fpos] = x * win[fpos];
+      if (++fpos == fftN) {
+        fpos = 0;
+        kiss_fftr(fft, fbuf.data(), spec.data());
+        double fc[12] = {0}, eSum = 0, cSum = 0;
+        for (int k = 1; k <= fftN / 2; ++k) {
+          double mag = std::sqrt(static_cast<double>(spec[k].r) * spec[k].r + static_cast<double>(spec[k].i) * spec[k].i);
+          double f = static_cast<double>(k) * sr / fftN;
+          eSum += mag;
+          cSum += mag * f;
+          if (binPc[k] >= 0) fc[binPc[k]] += mag;
+        }
+        if (eSum > 1e-3) {
+          // Log-compressed per frame so loud passages do not dominate the key.
+          double mx = 0;
+          for (double v : fc) mx = std::max(mx, v);
+          if (mx > 0) {
+            for (int p = 0; p < 12; ++p) chroma[p] += std::log1p(10.0 * fc[p] / mx);
+          }
+          frameCentroid.push_back({static_cast<float>(eSum), static_cast<float>(cSum / eSum)});
+        }
+      }
       peakAcc = std::max(peakAcc, std::fabs(x));
       if (++peakCount == peakHop) {
         if (peaks && nPeaks < max_peaks) peaks[nPeaks++] = std::min(1.f, peakAcc);
@@ -1015,9 +1162,60 @@ int32_t csa_analyze(const char* path, CsaAnalysis* out, float* peaks, int32_t ma
     total += static_cast<int64_t>(got);
   }
   ma_decoder_uninit(&dec);
+  kiss_fftr_free(fft);
   if (total < sr) {
     setError("Archivo demasiado corto.");
     return -3;
+  }
+
+  // Key: correlate the chroma with Krumhansl-Kessler major/minor profiles.
+  {
+    static const double kMaj[12] = {6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88};
+    static const double kMin[12] = {6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17};
+    auto corr = [&](const double* prof, int rot) {
+      double ma = 0, mb = 0;
+      for (int i = 0; i < 12; ++i) {
+        ma += chroma[(i + rot) % 12];
+        mb += prof[i];
+      }
+      ma /= 12;
+      mb /= 12;
+      double num = 0, da = 0, db = 0;
+      for (int i = 0; i < 12; ++i) {
+        double a = chroma[(i + rot) % 12] - ma, b = prof[i] - mb;
+        num += a * b;
+        da += a * a;
+        db += b * b;
+      }
+      return da > 0 && db > 0 ? num / std::sqrt(da * db) : 0.0;
+    };
+    double best = -2;
+    int bestKey = -1;
+    for (int r = 0; r < 12; ++r) {
+      double a = corr(kMaj, r), b = corr(kMin, r);
+      if (a > best) { best = a; bestKey = r; }
+      if (b > best) { best = b; bestKey = 12 + r; }
+    }
+    if (best > 0.3) {
+      out->key = bestKey;
+      out->key_conf = static_cast<float>(best);
+    }
+  }
+
+  // Brightness: energy-weighted centroid of the louder half of the frames.
+  if (!frameCentroid.empty()) {
+    std::vector<float> es;
+    for (auto& p : frameCentroid) es.push_back(p.first);
+    std::sort(es.begin(), es.end());
+    float med = es[es.size() / 2];
+    double w = 0, c = 0;
+    for (auto& p : frameCentroid) {
+      if (p.first >= med) {
+        w += p.first;
+        c += static_cast<double>(p.first) * p.second;
+      }
+    }
+    if (w > 0) out->brightness = static_cast<float>(std::clamp(c / w / 5512.5, 0.0, 1.0));
   }
   out->duration = static_cast<double>(total) / sr;
 
@@ -1044,6 +1242,24 @@ int32_t csa_analyze(const char* path, CsaAnalysis* out, float* peaks, int32_t ma
   for (float v : onset) mean += v;
   mean /= std::max<size_t>(1, n);
   for (float& v : onset) v = static_cast<float>(v - mean);
+
+  // Hits per second: local maxima clearly above the onset noise floor.
+  {
+    double var = 0;
+    for (float v : onset) var += static_cast<double>(v) * v;
+    double sd = std::sqrt(var / std::max<size_t>(1, n));
+    int hits = 0;
+    for (size_t i = 3; i + 3 < n; ++i) {
+      float v = onset[i];
+      if (v < 1.5 * sd) continue;
+      bool peak = true;
+      for (size_t k = i - 3; k <= i + 3; ++k) {
+        if (k != i && onset[k] > v) { peak = false; break; }
+      }
+      if (peak) ++hits;
+    }
+    out->onset_rate = static_cast<float>(hits / out->duration);
+  }
 
   // Autocorrelation over lags covering 4 beats at 70 BPM.
   const double fps = static_cast<double>(sr) / hop;
@@ -1074,6 +1290,13 @@ int32_t csa_analyze(const char* path, CsaAnalysis* out, float* peaks, int32_t ma
     }
     // Refine: the beat grid must also line up 8 and 16 beats later, which pins
     // the tempo far more precisely than the first lag alone.
+    double ac0 = 0;
+    for (size_t i = 0; i < n; ++i) ac0 += static_cast<double>(onset[i]) * onset[i];
+    ac0 /= std::max<size_t>(1, n);
+    if (best > 0 && ac0 > 0) {
+      double L = fps * 60.0 / bestBpm;
+      out->pulse = static_cast<float>(std::clamp(acAt(L) / ac0, 0.0, 1.0));
+    }
     if (best > 0) {
       int fineMaxLag = static_cast<int>(fps * 60.0 / (bestBpm - 2.0) * 16) + 2;
       if (static_cast<int>(n) > fineMaxLag * 2) {

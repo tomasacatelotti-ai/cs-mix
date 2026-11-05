@@ -91,7 +91,7 @@ class _DjScreenState extends State<DjScreen> {
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: CS.acero))),
       child: Row(children: [
-        IconBox(icon: Icons.chevron_left, tooltip: 'Volver', onTap: () => Navigator.of(context).pop()),
+        IconBox(icon: Icons.chevron_left, tooltip: 'Volver a Inicio', onTap: () => goHome(context)),
         const SizedBox(width: 12),
         Expanded(
           child: Container(
@@ -103,7 +103,9 @@ class _DjScreenState extends State<DjScreen> {
         Flexible(child: Pill('Master: ${app.masterLabel()}', icon: Icons.speaker)),
         const SizedBox(width: 8),
         Flexible(
-          child: cue == null
+          child: app.cueMuted
+              ? const Pill('Pre-escucha silenciada: el sistema la movió, reconectando…', icon: Icons.headset_off, color: CS.ambar, background: CS.ambarFondo)
+              : cue == null
               ? const Pill('Pre-escucha: conectá auriculares por cable o USB', icon: Icons.headset_off, color: CS.ambar, background: CS.ambarFondo)
               : Pill('Pre-escucha: $cue', icon: Icons.headphones, color: CS.ambar, background: CS.ambarFondo),
         ),

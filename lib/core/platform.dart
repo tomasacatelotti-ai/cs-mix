@@ -37,11 +37,12 @@ class Native {
   static const _ch = MethodChannel('cs_mix/native');
   static void Function(String action)? _onMedia;
 
-  static void listenMedia(void Function(String action) cb) {
+  static void listenMedia(void Function(String action) cb, {void Function()? onDevices}) {
     _onMedia = cb;
     if (!Platform.isAndroid) return;
     _ch.setMethodCallHandler((call) async {
       if (call.method == 'media') _onMedia?.call(call.arguments as String);
+      if (call.method == 'devicesChanged') onDevices?.call();
       return null;
     });
   }

@@ -26,7 +26,7 @@ class PlayerScreen extends StatelessWidget {
                 CsHeader(
                   title: 'Reproductor',
                   subtitle: '${p.source ?? (cur == null ? 'Elegí qué escuchar' : 'Cola')} · ${app.masterLabel()}',
-                  onBack: () => Navigator.of(context).pop(),
+                  onBack: () => goHome(context),
                   trailing: [
                     IconBox(icon: Icons.queue_music, tooltip: 'Ver cola', onTap: () => _showQueue(context)),
                   ],
@@ -59,7 +59,7 @@ class PlayerScreen extends StatelessWidget {
           Text('Elegí un tema o una playlist para arrancar.', style: CS.body(15, color: CS.humo)),
           const SizedBox(height: 20),
           PrimaryButton('Elegir temas', onTap: () {
-            Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LibraryScreen()));
+            openScreen(context, const LibraryScreen());
           }),
         ],
       ),
@@ -278,7 +278,7 @@ class PlayerScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(16),
                 child: SecondaryButton('Agregar temas', icon: Icons.add, onTap: () {
                   Navigator.of(ctx).pop();
-                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LibraryScreen()));
+                  openScreen(context, const LibraryScreen());
                 }),
               ),
             ]);

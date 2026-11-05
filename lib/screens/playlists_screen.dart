@@ -104,7 +104,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
               CsHeader(
                 title: 'Listas',
                 subtitle: '${lib.playlists.length} playlists',
-                onBack: () => Navigator.of(context).pop(),
+                onBack: () => goHome(context),
                 trailing: [IconBox(icon: Icons.add, tooltip: 'Nueva playlist', onTap: _create)],
               ),
               if (_busy) const LinearProgressIndicator(color: CS.rojo, backgroundColor: CS.acero),
@@ -151,8 +151,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
       child: Row(children: [
         Expanded(
           child: InkWell(
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => LibraryScreen(initialTracks: tracks, title: p.name))),
+            onTap: () => openScreen(context, LibraryScreen(initialTracks: tracks, title: p.name)),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(p.name, style: CS.body(16, weight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
               Text('${tracks.length} temas${p.source != null ? ' · de Virtual DJ' : ''}', style: CS.body(13, color: CS.humo)),
@@ -189,7 +188,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
               ? null
               : () {
                   app.player.playList(tracks, name: p.name);
-                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
+                  openScreen(context, const PlayerScreen());
                 },
         ),
       ]),

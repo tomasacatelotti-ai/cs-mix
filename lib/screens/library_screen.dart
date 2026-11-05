@@ -84,14 +84,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
         _q.clear();
       });
 
-  void _up() {
-    final cur = _cur;
-    if (cur == _root) return;
-    final i = cur.lastIndexOf('/');
-    final parent = i < 0 ? '' : cur.substring(0, i);
-    _open(parent.length < _root.length ? _root : parent);
-  }
-
   String _name(String dir) => dir.isEmpty ? 'Toda la biblioteca' : dir.substring(dir.lastIndexOf('/') + 1);
 
   @override
@@ -118,10 +110,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         final atRoot = cur == _root;
 
         return PopScope(
-          canPop: atRoot,
-          onPopInvokedWithResult: (didPop, _) {
-            if (!didPop) _up();
-          },
+          canPop: true,
           child: Scaffold(
             body: SafeArea(
               child: Column(children: [
@@ -133,7 +122,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       ? 'Buscando temas…'
                       : '${playable.length} temas${folderNames.isNotEmpty ? ' · ${folderNames.length} carpetas para filtrar' : ''}'
                           '${lib.pendingAnalysis > 0 ? ' · analizando ${lib.pendingAnalysis}' : ''}',
-                  onBack: () => atRoot ? Navigator.of(context).pop() : _up(),
+                  onBack: () => widget.pickLabel != null ? Navigator.of(context).pop() : goHome(context),
                   trailing: [
                     PopupMenuButton<_Sort>(
                       tooltip: 'Ordenar',
@@ -181,7 +170,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         final list = List.of(playable);
                         if (!searching) _sortTracks(list);
                         app.player.playList(list, name: widget.title ?? _name(cur));
-                        Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
+                        openScreen(context, const PlayerScreen());
                       },
                     ),
                   ),
@@ -346,7 +335,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
             item(Icons.play_arrow, 'Reproducir ahora', () {
               app.player.playNow(t);
-              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
+              openScreen(context, const PlayerScreen());
             }),
             item(Icons.playlist_play, 'Que suene después', () {
               app.player.playAfterCurrent(t);

@@ -1,9 +1,17 @@
 cmake_minimum_required(VERSION 3.10)
-project(cs_audio_library VERSION 0.1.0 LANGUAGES C CXX)
+project(cs_audio_library VERSION 0.2.0 LANGUAGES C CXX)
 
+set(CP chromaprint)
 add_library(cs_audio SHARED
   "cs_audio.cpp"
   "miniaudio_impl.c"
+  ${CP}/audio_processor.cpp ${CP}/chroma.cpp ${CP}/chroma_resampler.cpp ${CP}/chroma_filter.cpp
+  ${CP}/spectrum.cpp ${CP}/fft.cpp ${CP}/fingerprinter.cpp ${CP}/image_builder.cpp ${CP}/simhash.cpp
+  ${CP}/silence_remover.cpp ${CP}/fingerprint_calculator.cpp ${CP}/fingerprint_compressor.cpp
+  ${CP}/fingerprint_decompressor.cpp ${CP}/fingerprinter_configuration.cpp ${CP}/fingerprint_matcher.cpp
+  ${CP}/chromaprint.cpp ${CP}/fft_lib_kissfft.cpp ${CP}/utils/base64.cpp
+  ${CP}/avresample/resample2.c
+  ${CP}/kissfft/kiss_fft.c ${CP}/kissfft/kiss_fftr.c
 )
 
 set_target_properties(cs_audio PROPERTIES
@@ -11,6 +19,12 @@ set_target_properties(cs_audio PROPERTIES
   OUTPUT_NAME "cs_audio"
   CXX_STANDARD 17
   CXX_STANDARD_REQUIRED ON
+)
+
+target_include_directories(cs_audio PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/${CP}
+  ${CMAKE_CURRENT_SOURCE_DIR}/${CP}/kissfft
 )
 
 # Same feature switches for every file that includes miniaudio.h.
@@ -21,11 +35,14 @@ target_compile_definitions(cs_audio PRIVATE
   MA_NO_ENGINE
   MA_NO_NODE_GRAPH
   MA_NO_RESOURCE_MANAGER
+  HAVE_CONFIG_H
+  CHROMAPRINT_NODLL
+  _USE_MATH_DEFINES
 )
 
 if (MSVC)
   target_compile_options(cs_audio PRIVATE /O2 /utf-8)
-  target_compile_definitions(cs_audio PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+  target_compile_definitions(cs_audio PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
 else()
   target_compile_options(cs_audio PRIVATE -O2 -fvisibility=hidden)
 endif()

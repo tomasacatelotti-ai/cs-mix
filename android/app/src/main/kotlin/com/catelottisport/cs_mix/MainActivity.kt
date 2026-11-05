@@ -3,8 +3,11 @@ package com.catelottisport.cs_mix
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -33,6 +36,16 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "cs_mix/native")
         channel = ch
+        // Tell Dart when outputs come and go (Bluetooth reconnects, headphones plugged).
+        val am = getSystemService(AUDIO_SERVICE) as AudioManager
+        am.registerAudioDeviceCallback(object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>?) {
+                channel?.invokeMethod("devicesChanged", null)
+            }
+            override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>?) {
+                channel?.invokeMethod("devicesChanged", null)
+            }
+        }, Handler(Looper.getMainLooper()))
         ch.setMethodCallHandler { call, result ->
             when (call.method) {
                 "appDir" -> result.success(filesDir.absolutePath)

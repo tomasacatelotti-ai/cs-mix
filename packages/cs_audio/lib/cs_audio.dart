@@ -41,6 +41,16 @@ final class CsaAnalysis extends Struct {
   external double introSec;
   @Float()
   external double loudDb;
+  @Int32()
+  external int key;
+  @Float()
+  external double keyConf;
+  @Float()
+  external double onsetRate;
+  @Float()
+  external double pulse;
+  @Float()
+  external double brightness;
 }
 
 /// Plain copy of a deck's state.
@@ -81,6 +91,11 @@ class AnalysisResult {
     required this.introSec,
     required this.loudDb,
     required this.peaks,
+    this.key = -1,
+    this.keyConf = 0,
+    this.onsetRate = 0,
+    this.pulse = 0,
+    this.brightness = 0,
   });
 
   final double duration;
@@ -91,6 +106,13 @@ class AnalysisResult {
 
   /// 30 values per second, 0..1.
   final Float32List peaks;
+
+  /// 0..11 major (C..B), 12..23 minor, -1 unknown.
+  final int key;
+  final double keyConf;
+  final double onsetRate;
+  final double pulse;
+  final double brightness;
 }
 
 typedef _VoidV = Void Function();
@@ -112,6 +134,10 @@ class _Bindings {
         openCue = lib.lookupFunction<Int32 Function(Int32, Int32), int Function(int, int)>('csa_open_cue'),
         closeCue = lib.lookupFunction<_VoidV, _VoidD>('csa_close_cue'),
         cueOpen = lib.lookupFunction<_IntV, _IntD>('csa_cue_open'),
+        cueStatus = lib.lookupFunction<_IntV, _IntD>('csa_cue_status'),
+        takeRouteEvents = lib.lookupFunction<_IntV, _IntD>('csa_take_route_events'),
+        fingerprint = lib.lookupFunction<Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Int32, Pointer<Int32>),
+            int Function(Pointer<Utf8>, Pointer<Utf8>, int, Pointer<Int32>)>('csa_fingerprint'),
         deckLoad = lib.lookupFunction<Int32 Function(Int32, Pointer<Utf8>, Double),
             int Function(int, Pointer<Utf8>, double)>('csa_deck_load'),
         deckUnload = lib.lookupFunction<Void Function(Int32), void Function(int)>('csa_deck_unload'),
@@ -147,6 +173,9 @@ class _Bindings {
   final int Function(int, int) openCue;
   final _VoidD closeCue;
   final _IntD cueOpen;
+  final _IntD cueStatus;
+  final _IntD takeRouteEvents;
+  final int Function(Pointer<Utf8>, Pointer<Utf8>, int, Pointer<Int32>) fingerprint;
   final int Function(int, Pointer<Utf8>, double) deckLoad;
   final void Function(int) deckUnload;
   final void Function(int, Pointer<CsaDeckInfo>) deckInfo;
@@ -217,6 +246,28 @@ class CsAudio {
   static void closeCue() => _b.closeCue();
   static bool get cueOpen => _b.cueOpen() == 1;
 
+  /// 0 closed, 1 ok, 2 muted because the system moved the pre-listen output.
+  static int get cueStatus => _b.cueStatus();
+
+  /// Bit 1 master rerouted, bit 2 cue rerouted (clears them).
+  static int takeRouteEvents() => _b.takeRouteEvents();
+
+  /// Chromaprint fingerprint (for AcoustID), in a background isolate.
+  static Future<({String fingerprint, int duration})?> fingerprintOf(String path) => Isolate.run(() {
+        final p = path.toNativeUtf8();
+        final out = calloc<Uint8>(32768).cast<Utf8>();
+        final dur = calloc<Int32>();
+        try {
+          final n = _b.fingerprint(p, out, 32768, dur);
+          if (n <= 0) return null;
+          return (fingerprint: out.toDartString(), duration: dur.value);
+        } finally {
+          calloc.free(p);
+          calloc.free(out);
+          calloc.free(dur);
+        }
+      });
+
   static void load(int deck, String path, double startSec) {
     final p = path.toNativeUtf8();
     try {
@@ -279,6 +330,11 @@ class CsAudio {
         introSec: r.introSec,
         loudDb: r.loudDb,
         peaks: Float32List.fromList(peaks.asTypedList(n)),
+        key: r.key,
+        keyConf: r.keyConf,
+        onsetRate: r.onsetRate,
+        pulse: r.pulse,
+        brightness: r.brightness,
       );
     } finally {
       calloc.free(p);

@@ -41,6 +41,11 @@ typedef struct {
   float gain_db;     // suggested gain to level tracks against each other
   float intro_sec;   // first strong hit after the intro
   float loud_db;     // loudness of the loud parts (dBFS RMS)
+  int32_t key;       // 0..11 major (C..B), 12..23 minor (Cm..Bm), -1 unknown
+  float key_conf;    // correlation of the best key profile, 0..1
+  float onset_rate;  // detected hits per second
+  float pulse;       // how clear the beat is, 0..1
+  float brightness;  // spectral centroid of the loud parts, 0..1 (0 Hz .. 5.5 kHz)
 } CsaAnalysis;
 
 // Lifecycle.
@@ -56,6 +61,10 @@ CSA_API int32_t csa_open_master(int32_t index, int32_t android_id);
 CSA_API int32_t csa_open_cue(int32_t index, int32_t android_id);
 CSA_API void csa_close_cue(void);
 CSA_API int32_t csa_cue_open(void);
+// 0 closed, 1 playing on its own device, 2 muted because the system moved it.
+CSA_API int32_t csa_cue_status(void);
+// Bit 1: master was rerouted, bit 2: cue was rerouted. Clears the bits.
+CSA_API int32_t csa_take_route_events(void);
 
 // Decks (0 = A, 1 = B).
 CSA_API int32_t csa_deck_load(int32_t deck, const char* path_utf8, double start_sec);
@@ -82,6 +91,10 @@ CSA_API void csa_test_tone(int32_t on);  // click on both outputs, for latency c
 // Offline analysis (blocking: call from a background isolate).
 // peaks receives 30 values per second (up to max_peaks); returns the count written, <0 on error.
 CSA_API int32_t csa_analyze(const char* path_utf8, CsaAnalysis* out, float* peaks, int32_t max_peaks);
+
+// Chromaprint fingerprint of the first 120 s (for AcoustID). Writes a NUL-terminated
+// base64 string into out; returns its length, <0 on error. duration_sec gets the track length.
+CSA_API int32_t csa_fingerprint(const char* path_utf8, char* out, int32_t len, int32_t* duration_sec);
 
 // Renders master output without a device (tests).
 CSA_API void csa_render_offline(float* out, int32_t frames, float* cue_out);

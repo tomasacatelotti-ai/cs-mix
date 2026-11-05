@@ -45,7 +45,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           builder: (context, _) {
             final s = app.settings;
             return Column(children: [
-              CsHeader(title: 'Ajustes', subtitle: 'Transiciones, sonido y salida', onBack: () => Navigator.of(context).pop()),
+              CsHeader(title: 'Ajustes', subtitle: 'Transiciones, sonido y salida', onBack: () => goHome(context)),
               Expanded(
                 child: Center(
                   child: ConstrainedBox(
