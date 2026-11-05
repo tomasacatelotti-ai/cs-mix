@@ -38,9 +38,18 @@ class Track {
     return i < 0 ? relPath : relPath.substring(i + 1);
   }
 
-  /// First folder under the library root (in this library, the genre).
+  /// Leading folders every track shares (e.g. "BIBLIOTECA - EN USO"), set by the library.
+  static int sharedDepth = 0;
+
+  /// First meaningful folder (in this library, the genre).
   String get folder {
-    final i = relPath.indexOf('/');
+    final segs = relPath.split('/');
+    return segs.length - 1 > sharedDepth ? segs[sharedDepth] : '';
+  }
+
+  /// Folder that holds the file, relative to the library root ('' at the root).
+  String get dir {
+    final i = relPath.lastIndexOf('/');
     return i < 0 ? '' : relPath.substring(0, i);
   }
 

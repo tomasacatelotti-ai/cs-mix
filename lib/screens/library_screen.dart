@@ -22,24 +22,51 @@ class LibraryScreen extends StatefulWidget {
 
 class _LibraryScreenState extends State<LibraryScreen> {
   final _q = TextEditingController();
-  String _folder = '';
   _Sort _sort = _Sort.name;
 
-  List<Track> _filtered() {
-    final src = widget.initialTracks ?? app.library.tracks;
-    final q = _q.text.trim().toLowerCase();
-    final words = q.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-    final out = src.where((t) {
-      if (_folder.isNotEmpty && t.folder != _folder) return false;
-      if (words.isEmpty) return true;
-      final hay = '${t.title} ${t.artist} ${t.relPath}'.toLowerCase();
-      for (final w in words) {
-        final n = double.tryParse(w);
-        if (n != null && t.bpm > 0 && (t.bpm - n).abs() <= 2) continue;
-        if (!hay.contains(w)) return false;
-      }
-      return true;
-    }).toList();
+  /// Folder being browsed, relative to the library root ('/' separated). '' = everything.
+  String? _dir;
+
+  bool get _browsing => widget.initialTracks == null;
+  List<Track> get _src => widget.initialTracks ?? app.library.tracks;
+
+  /// Folders every track sits in (e.g. "BIBLIOTECA - EN USO"): browsing starts below them.
+  String get _root {
+    if (!_browsing || Track.sharedDepth == 0 || app.library.count == 0) return '';
+    final segs = app.library.tracks.first.relPath.split('/');
+    return segs.take(Track.sharedDepth).join('/');
+  }
+
+  String get _cur => _dir ?? _root;
+
+  bool _inDir(Track t, String dir) => dir.isEmpty || t.relPath.startsWith('$dir/');
+
+  /// Immediate subfolders of [dir] with how many tracks each holds (recursively).
+  Map<String, int> _subfolders(List<Track> inDir, String dir) {
+    final cut = dir.isEmpty ? 0 : dir.length + 1;
+    final out = <String, int>{};
+    for (final t in inDir) {
+      final rest = t.relPath.substring(cut);
+      final i = rest.indexOf('/');
+      if (i > 0) out.update(rest.substring(0, i), (v) => v + 1, ifAbsent: () => 1);
+    }
+    return out;
+  }
+
+  List<String> get _words => _q.text.trim().toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+
+  bool _matches(Track t, List<String> words) {
+    if (words.isEmpty) return true;
+    final hay = '${t.title} ${t.artist} ${t.fileName}'.toLowerCase();
+    for (final w in words) {
+      final n = double.tryParse(w);
+      if (n != null && t.bpm > 0 && (t.bpm - n).abs() <= 2) continue;
+      if (!hay.contains(w)) return false;
+    }
+    return true;
+  }
+
+  void _sortTracks(List<Track> out) {
     switch (_sort) {
       case _Sort.name:
         out.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
@@ -50,139 +77,203 @@ class _LibraryScreenState extends State<LibraryScreen> {
       case _Sort.recent:
         out.sort((a, b) => b.mtime.compareTo(a.mtime));
     }
-    if (widget.initialTracks != null && _sort == _Sort.name && words.isEmpty && _folder.isEmpty) {
-      return List.of(widget.initialTracks!);
-    }
-    return out;
   }
 
-  @override
-  void initState() {
-    super.initState();
-    if (widget.initialTracks != null) _sort = _Sort.name;
+  void _open(String dir) => setState(() {
+        _dir = dir;
+        _q.clear();
+      });
+
+  void _up() {
+    final cur = _cur;
+    if (cur == _root) return;
+    final i = cur.lastIndexOf('/');
+    final parent = i < 0 ? '' : cur.substring(0, i);
+    _open(parent.length < _root.length ? _root : parent);
   }
+
+  String _name(String dir) => dir.isEmpty ? 'Toda la biblioteca' : dir.substring(dir.lastIndexOf('/') + 1);
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: ListenableBuilder(
-          listenable: app.library,
-          builder: (context, _) {
-            final lib = app.library;
-            final list = _filtered();
-            final folders = widget.initialTracks == null ? lib.folders : const <String>[];
-            return Column(children: [
-              CsHeader(
-                title: widget.pickLabel != null ? 'Cargar en ${widget.pickLabel}' : (widget.title ?? 'Temas'),
-                subtitle: lib.scanning
-                    ? 'Buscando temas…'
-                    : '${list.length} de ${widget.initialTracks?.length ?? lib.count} temas'
-                        '${lib.pendingAnalysis > 0 ? ' · analizando ${lib.pendingAnalysis}' : ''}',
-                onBack: () => Navigator.of(context).pop(),
-                trailing: [
-                  PopupMenuButton<_Sort>(
-                    tooltip: 'Ordenar',
-                    color: CS.grafito,
-                    initialValue: _sort,
-                    onSelected: (s) => setState(() => _sort = s),
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: _Sort.name, child: Text('Nombre')),
-                      PopupMenuItem(value: _Sort.bpm, child: Text('BPM')),
-                      PopupMenuItem(value: _Sort.folder, child: Text('Carpeta')),
-                      PopupMenuItem(value: _Sort.recent, child: Text('Agregados recientemente')),
-                    ],
-                    child: const IgnorePointer(child: IconBox(icon: Icons.sort, onTap: _noop)),
-                  ),
-                ],
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-                child: TextField(
-                  controller: _q,
-                  onChanged: (_) => setState(() {}),
-                  style: CS.body(16),
-                  decoration: InputDecoration(
-                    hintText: 'Buscar tema, artista, carpeta o BPM',
-                    prefixIcon: const Icon(Icons.search, color: CS.humo),
-                    suffixIcon: _q.text.isEmpty
-                        ? null
-                        : IconButton(
-                            tooltip: 'Borrar',
-                            icon: const Icon(Icons.close, color: CS.humo),
-                            onPressed: () => setState(_q.clear),
-                          ),
-                  ),
-                ),
-              ),
-              if (folders.isNotEmpty)
-                SizedBox(
-                  height: 46,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                    children: [
-                      _chip('Todo', ''),
-                      for (final f in folders) _chip(f, f),
-                    ],
-                  ),
-                ),
-              if (widget.pickLabel == null && list.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-                  child: Row(children: [
-                    Expanded(
-                      child: SecondaryButton('Reproducir todo', icon: Icons.play_arrow, onTap: () {
-                        app.player.playList(list, name: _folder.isEmpty ? (widget.title ?? 'Biblioteca') : _folder);
-                        Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
-                      }),
-                    ),
-                  ]),
-                ),
-              Expanded(
-                child: list.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Text(
-                            lib.count == 0
-                                ? 'No hay temas en la carpeta de la biblioteca. Elegí la carpeta en Ajustes o copiá tu música ahí.'
-                                : 'Nada coincide con la búsqueda.',
-                            style: CS.body(15, color: CS.humo),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      )
-                    : ListView.builder(
-                        itemCount: list.length,
-                        itemExtent: 64,
-                        itemBuilder: (context, i) => _tile(list[i]),
-                      ),
-              ),
-            ]);
+    return ListenableBuilder(
+      listenable: app.library,
+      builder: (context, _) {
+        final lib = app.library;
+        final cur = _cur;
+        final words = _words;
+        final inDir = [for (final t in _src) if (!_browsing || _inDir(t, cur)) t];
+        final subs = _browsing ? _subfolders(inDir, cur) : const <String, int>{};
+        final searching = words.isNotEmpty;
+
+        // Search covers every subfolder; browsing shows folders first, then the files right here.
+        final tracks = [
+          for (final t in inDir)
+            if (searching ? _matches(t, words) : (!_browsing || t.dir == cur)) t,
+        ];
+        if (_browsing || _sort != _Sort.name || searching) _sortTracks(tracks);
+        final folderNames = subs.keys.where((f) => !searching || words.every((w) => f.toLowerCase().contains(w))).toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+        final playable = searching ? tracks : inDir;
+        final items = <Object>[...folderNames, ...tracks];
+        final atRoot = cur == _root;
+
+        return PopScope(
+          canPop: atRoot,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) _up();
           },
-        ),
-      ),
+          child: Scaffold(
+            body: SafeArea(
+              child: Column(children: [
+                CsHeader(
+                  title: widget.pickLabel != null
+                      ? 'Cargar en ${widget.pickLabel}'
+                      : (widget.title ?? (atRoot ? 'Temas' : _name(cur))),
+                  subtitle: lib.scanning
+                      ? 'Buscando temas…'
+                      : '${playable.length} temas${folderNames.isNotEmpty && !searching ? ' · ${folderNames.length} carpetas' : ''}'
+                          '${lib.pendingAnalysis > 0 ? ' · analizando ${lib.pendingAnalysis}' : ''}',
+                  onBack: () => atRoot ? Navigator.of(context).pop() : _up(),
+                  trailing: [
+                    PopupMenuButton<_Sort>(
+                      tooltip: 'Ordenar',
+                      color: CS.grafito,
+                      initialValue: _sort,
+                      onSelected: (s) => setState(() => _sort = s),
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(value: _Sort.name, child: Text('Nombre')),
+                        PopupMenuItem(value: _Sort.bpm, child: Text('BPM')),
+                        PopupMenuItem(value: _Sort.folder, child: Text('Carpeta')),
+                        PopupMenuItem(value: _Sort.recent, child: Text('Agregados recientemente')),
+                      ],
+                      child: const IgnorePointer(child: IconBox(icon: Icons.sort, onTap: _noop)),
+                    ),
+                  ],
+                ),
+                if (_browsing && !atRoot) _breadcrumb(cur),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                  child: TextField(
+                    controller: _q,
+                    onChanged: (_) => setState(() {}),
+                    style: CS.body(16),
+                    decoration: InputDecoration(
+                      hintText: atRoot || !_browsing ? 'Buscar tema, artista o BPM' : 'Buscar en ${_name(cur)}',
+                      prefixIcon: const Icon(Icons.search, color: CS.humo),
+                      suffixIcon: _q.text.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Borrar',
+                              icon: const Icon(Icons.close, color: CS.humo),
+                              onPressed: () => setState(_q.clear),
+                            ),
+                    ),
+                  ),
+                ),
+                if (widget.pickLabel == null && playable.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+                    child: SecondaryButton(
+                      searching ? 'Reproducir resultados' : (atRoot ? 'Reproducir todo' : 'Reproducir esta carpeta'),
+                      icon: Icons.play_arrow,
+                      onTap: () {
+                        final list = List.of(playable);
+                        if (!searching) _sortTracks(list);
+                        app.player.playList(list, name: widget.title ?? _name(cur));
+                        Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
+                      },
+                    ),
+                  ),
+                Expanded(
+                  child: items.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              lib.count == 0
+                                  ? 'No hay temas en la carpeta de la biblioteca. Elegí la carpeta en Ajustes o copiá tu música ahí.'
+                                  : (searching ? 'Nada coincide en ${_name(cur)}.' : 'Esta carpeta está vacía.'),
+                              style: CS.body(15, color: CS.humo),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          itemCount: items.length,
+                          itemExtent: 64,
+                          itemBuilder: (context, i) {
+                            final it = items[i];
+                            return it is String ? _folderTile(it, subs[it] ?? 0, cur) : _tile(it as Track);
+                          },
+                        ),
+                ),
+              ]),
+            ),
+          ),
+        );
+      },
     );
   }
 
   static void _noop() {}
 
-  Widget _chip(String label, String value) {
-    final on = _folder == value;
-    return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: Material(
-        color: on ? CS.rojo : CS.grafito,
-        borderRadius: BorderRadius.circular(99),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(99),
-          onTap: () => setState(() => _folder = value),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Text(label, style: CS.body(14, color: on ? CS.blanco : CS.humo)),
+  Widget _breadcrumb(String cur) {
+    final root = _root;
+    final rel = root.isEmpty ? cur : cur.substring(root.length).replaceFirst(RegExp('^/'), '');
+    final segs = rel.isEmpty ? <String>[] : rel.split('/');
+    final crumbs = <(String, String)>[('Todo', root)];
+    for (var k = 0; k < segs.length; k++) {
+      final path = [if (root.isNotEmpty) root, ...segs.take(k + 1)].join('/');
+      crumbs.add((segs[k], path));
+    }
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        children: [
+          for (var k = 0; k < crumbs.length; k++) ...[
+            if (k > 0) const Padding(padding: EdgeInsets.symmetric(horizontal: 2), child: Icon(Icons.chevron_right, color: CS.humo, size: 18)),
+            Material(
+              color: k == crumbs.length - 1 ? CS.rojo : CS.grafito,
+              borderRadius: BorderRadius.circular(99),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(99),
+                onTap: k == crumbs.length - 1 ? null : () => _open(crumbs[k].$2),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  child: Text(crumbs[k].$1, style: CS.body(14, color: k == crumbs.length - 1 ? CS.blanco : CS.humo)),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _folderTile(String name, int count, String cur) {
+    return InkWell(
+      onTap: () => _open(cur.isEmpty ? name : '$cur/$name'),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: CS.acero))),
+        child: Row(children: [
+          const Icon(Icons.folder, color: CS.ambar, size: 28),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, style: CS.body(15, weight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text('$count temas', style: CS.body(13, color: CS.humo)),
+              ],
+            ),
           ),
-        ),
+          const Icon(Icons.chevron_right, color: CS.humo),
+        ]),
       ),
     );
   }
@@ -206,7 +297,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(t.title, style: CS.body(15, weight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
-                Text(t.artist.isEmpty ? t.folder : '${t.artist} · ${t.folder}',
+                Text(t.artist.isEmpty ? _name(t.dir) : '${t.artist} · ${_name(t.dir)}',
                     style: CS.body(13, color: CS.humo), maxLines: 1, overflow: TextOverflow.ellipsis),
               ],
             ),

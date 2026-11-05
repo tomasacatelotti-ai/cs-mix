@@ -64,7 +64,27 @@ class LibraryStore extends ChangeNotifier {
     }
     await _peakDir.create(recursive: true);
     analyzedCount = _tracks.values.where((t) => t.analyzed).length;
+    _computeSharedDepth();
     notifyListeners();
+  }
+
+  /// How many leading folders all tracks share, so genres are the first folder that differs.
+  void _computeSharedDepth() {
+    List<String>? common;
+    for (final t in _tracks.values) {
+      final segs = t.dir.isEmpty ? <String>[] : t.dir.split('/');
+      if (common == null) {
+        common = segs;
+        continue;
+      }
+      var k = 0;
+      while (k < common.length && k < segs.length && common[k] == segs[k]) {
+        k++;
+      }
+      common = common.sublist(0, k);
+      if (common.isEmpty) break;
+    }
+    Track.sharedDepth = common?.length ?? 0;
   }
 
   void save() {
@@ -132,6 +152,7 @@ class LibraryStore extends ChangeNotifier {
         _tracks[f.path] = t;
       }
       _tracks.removeWhere((p, _) => !seen.contains(p));
+      _computeSharedDepth();
       lastScan = DateTime.now();
       analyzedCount = _tracks.values.where((t) => t.analyzed).length;
       save();
