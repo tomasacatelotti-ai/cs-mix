@@ -24,6 +24,8 @@ jobs:
       - run: flutter pub get
       - name: Analyze (errors fail the build)
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: Tests
+        run: flutter test
 
   android:
     needs: analyze
@@ -39,8 +41,16 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+      - uses: gradle/actions/setup-gradle@v4
       - run: flutter pub get
-      - run: flutter build apk --release --build-name=${{ env.APP_VERSION }} --build-number=${{ github.run_number }}
+      - name: Build APK (retries when Gradle downloads time out)
+        shell: bash
+        run: |
+          for i in 1 2 3; do
+            flutter build apk --release --build-name=${{ env.APP_VERSION }} --build-number=${{ github.run_number }} && exit 0
+            echo "Intento $i falló, reintento en 30 s"; sleep 30
+          done
+          exit 1
       - run: mv build/app/outputs/flutter-apk/app-release.apk "CS-Mix-${{ env.APP_VERSION }}.apk"
       - uses: actions/upload-artifact@v4
         with:
