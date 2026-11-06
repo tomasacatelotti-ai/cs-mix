@@ -47,6 +47,14 @@ class AppState extends ChangeNotifier {
   late String dataDir;
   Settings settings = Settings();
   late LibraryStore library;
+
+  /// Downloads from a direct link into the library's "Descargas" folder.
+  late final LinkDownloader downloader;
+
+  /// A link shared to CS Mix from another app; the home screen opens the download sheet with it.
+  void Function(String link)? onSharedLink;
+  String? _pendingLink;
+  Timer? _rescanSoonTimer;
   final engine = EngineModel();
   late final PlayerController player;
   late final DjController dj;
