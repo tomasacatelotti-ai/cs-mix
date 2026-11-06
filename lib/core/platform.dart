@@ -37,14 +37,25 @@ class Native {
   static const _ch = MethodChannel('cs_mix/native');
   static void Function(String action)? _onMedia;
 
-  static void listenMedia(void Function(String action) cb, {void Function()? onDevices}) {
+  static void listenMedia(void Function(String action) cb, {void Function()? onDevices, void Function(String text)? onShared}) {
     _onMedia = cb;
     if (!Platform.isAndroid) return;
     _ch.setMethodCallHandler((call) async {
       if (call.method == 'media') _onMedia?.call(call.arguments as String);
       if (call.method == 'devicesChanged') onDevices?.call();
+      if (call.method == 'sharedLink' && call.arguments is String) onShared?.call(call.arguments as String);
       return null;
     });
+  }
+
+  /// Text shared to CS Mix ("Compartir" in another app) that opened it, once.
+  static Future<String?> takeSharedLink() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      return await _ch.invokeMethod<String>('takeSharedLink');
+    } catch (_) {
+      return null;
+    }
   }
 
   static Future<String> deviceName() async {

@@ -1,9 +1,43 @@
 cmake_minimum_required(VERSION 3.10)
 project(cs_audio_library VERSION 0.2.0 LANGUAGES C CXX)
 
+# LAME (only the MP3 encoder) as its own static library: it has its own config.h,
+# which must not be confused with chromaprint's.
+add_library(cs_lame STATIC
+  lame/VbrTag.c
+  lame/bitstream.c
+  lame/encoder.c
+  lame/fft.c
+  lame/gain_analysis.c
+  lame/id3tag.c
+  lame/lame.c
+  lame/newmdct.c
+  lame/presets.c
+  lame/psymodel.c
+  lame/quantize.c
+  lame/quantize_pvt.c
+  lame/reservoir.c
+  lame/set_get.c
+  lame/tables.c
+  lame/takehiro.c
+  lame/util.c
+  lame/vbrquantize.c
+  lame/version.c
+)
+set_target_properties(cs_lame PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
+target_include_directories(cs_lame PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lame)
+target_compile_definitions(cs_lame PRIVATE HAVE_CONFIG_H)
+if (MSVC)
+  target_compile_options(cs_lame PRIVATE /O2 /wd4244 /wd4305 /wd4996)
+  target_compile_definitions(cs_lame PRIVATE _CRT_SECURE_NO_WARNINGS)
+else()
+  target_compile_options(cs_lame PRIVATE -O2 -w)
+endif()
+
 set(CP chromaprint)
 add_library(cs_audio SHARED
   "cs_audio.cpp"
+  "convert.cpp"
   "miniaudio_impl.c"
   ${CP}/audio_processor.cpp ${CP}/chroma.cpp ${CP}/chroma_resampler.cpp ${CP}/chroma_filter.cpp
   ${CP}/spectrum.cpp ${CP}/fft.cpp ${CP}/fingerprinter.cpp ${CP}/image_builder.cpp ${CP}/simhash.cpp
@@ -47,11 +81,17 @@ else()
   target_compile_options(cs_audio PRIVATE -O2 -fvisibility=hidden)
 endif()
 
+target_link_libraries(cs_audio PRIVATE cs_lame)
+
 if (ANDROID)
   # Support Android 15 16k page size devices.
   target_link_options(cs_audio PRIVATE "-Wl,-z,max-page-size=16384")
   find_library(log-lib log)
-  target_link_libraries(cs_audio PRIVATE ${log-lib})
+  find_library(mediandk-lib mediandk)
+  target_link_libraries(cs_audio PRIVATE ${log-lib} ${mediandk-lib})
+elseif (WIN32)
+  # Media Foundation decodes the audio of MP4/M4A downloads.
+  target_link_libraries(cs_audio PRIVATE mfplat mfreadwrite mfuuid ole32)
 elseif (UNIX)
   find_package(Threads REQUIRED)
   target_link_libraries(cs_audio PRIVATE Threads::Threads dl m)

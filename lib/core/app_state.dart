@@ -6,6 +6,7 @@ import 'package:cs_audio/cs_audio.dart';
 import 'package:flutter/foundation.dart';
 
 import 'dj_controller.dart';
+import 'downloader.dart';
 import 'library.dart';
 import 'models.dart';
 import 'net.dart';
@@ -82,6 +83,11 @@ class AppState extends ChangeNotifier {
       }
       library = LibraryStore(dataDir);
       await library.load();
+      downloader = LinkDownloader(
+        root: () => settings.libraryRoot,
+        canWrite: () => hasStorage,
+        onSaved: (_) => rescanSoon(),
+      );
       server = LibraryServer(library);
       net = NetClient(library, dataDir, deviceName: await Native.deviceName());
       net.cacheLimitMb = settings.cacheLimitMb;
@@ -95,18 +101,47 @@ class AppState extends ChangeNotifier {
       engine.onTick = _tick;
       engine.onRouteChange = routeChanged;
       engine.start();
-      Native.listenMedia(_onMedia, onDevices: routeChanged);
+      Native.listenMedia(_onMedia, onDevices: routeChanged, onShared: sharedLink);
 
       hasStorage = await Native.hasStorageAccess();
       if (hasStorage) unawaited(library.scan(settings.libraryRoot));
       library.watch(() => hasStorage ? settings.libraryRoot : '');
       if (settings.shareEnabled) unawaited(server.start(pin: settings.sharePin, name: settings.shareName));
       if (settings.netHost.isNotEmpty) unawaited(net.resume(settings.netHost, settings.netPin, settings.netName));
+      final shared = await Native.takeSharedLink();
+      if (shared != null) sharedLink(shared);
     } catch (e) {
       startupError = '$e';
     }
     ready = true;
     notifyListeners();
+  }
+
+  /// A link arrived from Android's "Compartir".
+  void sharedLink(String text) {
+    final cb = onSharedLink;
+    if (cb != null) {
+      cb(text);
+    } else {
+      _pendingLink = text;
+    }
+  }
+
+  /// The shared link that arrived before the home screen was there to show it.
+  String? takePendingLink() {
+    final l = _pendingLink;
+    _pendingLink = null;
+    return l;
+  }
+
+  /// Rescans so a downloaded file shows up now, waiting if a scan is already running.
+  void rescanSoon() {
+    _rescanSoonTimer?.cancel();
+    if (library.scanning) {
+      _rescanSoonTimer = Timer(const Duration(seconds: 2), rescanSoon);
+    } else {
+      unawaited(library.scan(settings.libraryRoot));
+    }
   }
 
   Future<void> recheckStorage() async {

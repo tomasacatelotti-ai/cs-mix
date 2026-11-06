@@ -101,6 +101,24 @@ CSA_API int32_t csa_fingerprint(const char* path_utf8, char* out, int32_t len, i
 // Renders master output without a device (tests).
 CSA_API void csa_render_offline(float* out, int32_t frames, float* cue_out);
 
+// Conversion to MP3 (downloads from a link). Results:
+#define CSA_CONV_OK 0
+#define CSA_CONV_NO_AUDIO -1     // can't open the file or it has no audio track
+#define CSA_CONV_UNSUPPORTED -2  // the system has no decoder for that audio
+#define CSA_CONV_WRITE -3        // can't write the MP3
+#define CSA_CONV_ENCODER -4      // LAME rejected the settings
+#define CSA_CONV_CANCELLED -5
+#define CSA_CONV_DECODE -6       // the decoder failed halfway
+
+// Decodes the first audio track of in (MP4, M4A, AAC...) with the system decoder and writes a CBR
+// MP3 at kbps. Blocking: call from a background isolate. progress_permille goes 0..1000 while it
+// runs; setting *cancel to 1 stops it. Both pointers may be null.
+CSA_API int32_t csa_convert_mp3(const char* in_utf8, const char* out_utf8, int32_t kbps,
+                                volatile int32_t* progress_permille, volatile int32_t* cancel);
+// Encodes interleaved 16-bit PCM from memory (tests of the encoder alone).
+CSA_API int32_t csa_encode_pcm_mp3(const int16_t* pcm, int32_t frames, int32_t sample_rate,
+                                   int32_t channels, const char* out_utf8, int32_t kbps);
+
 #ifdef __cplusplus
 }
 #endif

@@ -10,6 +10,7 @@ import '../main.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'dj_screen.dart';
+import 'download_sheet.dart';
 import 'library_screen.dart';
 import 'network_screen.dart';
 import 'player_screen.dart';
@@ -84,11 +85,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Links shared to CS Mix from another app ("Compartir" → "Descargar en CS Mix").
+    app.onSharedLink = (link) {
+      if (mounted) showDownloadSheet(context, link: link);
+    };
+    final pending = app.takePendingLink();
+    if (pending != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) showDownloadSheet(context, link: pending);
+      });
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    app.onSharedLink = null;
     super.dispose();
   }
 

@@ -23,6 +23,9 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     companion object {
         var channel: MethodChannel? = null
+
+        /** Link shared to CS Mix (see ShareActivity) until Dart asks for it. */
+        var sharedText: String? = null
     }
 
     private var deviceCallback: AudioDeviceCallback? = null
@@ -58,6 +61,10 @@ class MainActivity : FlutterActivity() {
         ch.setMethodCallHandler { call, result ->
             when (call.method) {
                 "appDir" -> result.success(filesDir.absolutePath)
+                "takeSharedLink" -> {
+                    result.success(sharedText)
+                    sharedText = null
+                }
                 "deviceName" -> result.success("${Build.MANUFACTURER} ${Build.MODEL}")
                 "externalRoot" -> result.success(Environment.getExternalStorageDirectory().absolutePath)
                 "storageRoots" -> result.success(storageRoots())

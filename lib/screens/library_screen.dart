@@ -5,6 +5,7 @@ import '../core/models.dart';
 import '../main.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'download_sheet.dart';
 import 'player_screen.dart';
 import 'recognize_screen.dart';
 
@@ -142,6 +143,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           '${lib.pendingAnalysis > 0 ? ' · analizando ${lib.pendingAnalysis}' : ''}',
                   onBack: () => widget.pickLabel != null ? Navigator.of(context).pop() : goHome(context),
                   trailing: [
+                    if (widget.pickLabel == null)
+                      IconBox(icon: Icons.download, tooltip: 'Descargar desde link', onTap: () => showDownloadSheet(context)),
                     PopupMenuButton<_Sort>(
                       tooltip: 'Ordenar',
                       color: CS.grafito,

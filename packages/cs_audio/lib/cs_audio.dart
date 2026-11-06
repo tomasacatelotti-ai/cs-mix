@@ -115,6 +115,31 @@ class AnalysisResult {
   final double brightness;
 }
 
+/// Result of [CsAudio.convertToMp3], same order as CSA_CONV_* in cs_audio.h (0, -1, -2...).
+enum ConvertResult { ok, noAudio, unsupported, write, encoder, cancelled, decode }
+
+/// A conversion running in a background isolate.
+class Mp3Job {
+  Mp3Job._(this._state);
+
+  /// [0] progress in thousandths, [1] cancel flag. Shared with the native side.
+  final Pointer<Int32> _state;
+  bool _freed = false;
+  late final Future<ConvertResult> done;
+
+  /// 0..1 while it runs.
+  double get progress => _freed ? 1 : _state[0] / 1000;
+
+  void cancel() {
+    if (!_freed) _state[1] = 1;
+  }
+
+  void _free() {
+    _freed = true;
+    calloc.free(_state);
+  }
+}
+
 typedef _VoidV = Void Function();
 typedef _VoidD = void Function();
 typedef _IntV = Int32 Function();
@@ -163,7 +188,9 @@ class _Bindings {
         setCueMix = lib.lookupFunction<Void Function(Float), void Function(double)>('csa_set_cue_mix'),
         testTone = lib.lookupFunction<Void Function(Int32), void Function(int)>('csa_test_tone'),
         analyze = lib.lookupFunction<Int32 Function(Pointer<Utf8>, Pointer<CsaAnalysis>, Pointer<Float>, Int32),
-            int Function(Pointer<Utf8>, Pointer<CsaAnalysis>, Pointer<Float>, int)>('csa_analyze');
+            int Function(Pointer<Utf8>, Pointer<CsaAnalysis>, Pointer<Float>, int)>('csa_analyze'),
+        convertMp3 = lib.lookupFunction<Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Int32, Pointer<Int32>, Pointer<Int32>),
+            int Function(Pointer<Utf8>, Pointer<Utf8>, int, Pointer<Int32>, Pointer<Int32>)>('csa_convert_mp3');
 
   final _IntD init;
   final _VoidD shutdown;
@@ -197,6 +224,7 @@ class _Bindings {
   final void Function(double) setCueMix;
   final void Function(int) testTone;
   final int Function(Pointer<Utf8>, Pointer<CsaAnalysis>, Pointer<Float>, int) analyze;
+  final int Function(Pointer<Utf8>, Pointer<Utf8>, int, Pointer<Int32>, Pointer<Int32>) convertMp3;
 }
 
 DynamicLibrary _open() {
@@ -313,6 +341,28 @@ class CsAudio {
   static void setCueDelayMs(double ms) => _b.setCueDelayMs(ms);
   static void setCueMix(double m) => _b.setCueMix(m);
   static void testTone(bool on) => _b.testTone(on ? 1 : 0);
+
+  /// Decodes the audio of [input] (MP4, M4A, AAC...) with the system decoder and writes a CBR MP3
+  /// at [kbps] to [output], in a background isolate.
+  static Mp3Job convertToMp3(String input, String output, {int kbps = 160}) {
+    final state = calloc<Int32>(2);
+    final job = Mp3Job._(state);
+    final addr = state.address;
+    job.done = Isolate.run(() {
+      final st = Pointer<Int32>.fromAddress(addr);
+      final i = input.toNativeUtf8();
+      final o = output.toNativeUtf8();
+      try {
+        final rc = _b.convertMp3(i, o, kbps, st, st + 1);
+        final k = -rc;
+        return k >= 0 && k < ConvertResult.values.length ? ConvertResult.values[k] : ConvertResult.decode;
+      } finally {
+        calloc.free(i);
+        calloc.free(o);
+      }
+    }).whenComplete(job._free);
+    return job;
+  }
 
   /// Analyzes a file in a background isolate.
   static Future<AnalysisResult?> analyze(String path) => Isolate.run(() => _analyzeSync(path));
